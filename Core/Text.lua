@@ -22,6 +22,7 @@ SlotFiller.Text = {
 
     RESTORE_ERRORS = "Loaded profile %s with %d issue(s). Use " .. Constants.SLASH_COMMAND .. " errors.",
     RESTORE_CLEAN = "Loaded profile %s.",
+    RESTORE_ZONE_ABILITY_FAILED = "Zone ability in slot %d could not be restored. Enter a Draenor zone and reload the profile.",
     NO_ERRORS = "No restore issues recorded.",
 
     LIST_HEADER = "Saved profiles:",

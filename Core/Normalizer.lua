@@ -76,6 +76,9 @@ function SlotFiller.Normalizer.FromRaw(raw)
         slot.name = raw.name
         slot.subType = raw.subType
         slot.extraID = raw.extraID
+        if raw.isZoneAbility then
+            slot.isZoneAbility = true
+        end
     elseif actionType == Constants.ACTION_TYPE.ITEM then
         slot.id = raw.id
         slot.name = raw.name
@@ -92,6 +95,12 @@ function SlotFiller.Normalizer.FromRaw(raw)
             return nil
         end
         slot.id = raw.id
+    elseif actionType == Constants.ACTION_TYPE.SUMMONPET then
+        if not raw.id then
+            return nil
+        end
+        slot.id = raw.id
+        slot.name = raw.name
     elseif actionType == Constants.ACTION_TYPE.COMPANION then
         slot.id = raw.id
         slot.subType = raw.subType

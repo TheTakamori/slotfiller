@@ -71,6 +71,32 @@ function SlotFiller.ActionAPI.PlaceSlot(actionID)
     if PlaceAction then
         PlaceAction(actionID)
     end
+    -- PlaceAction swaps cursor content with the slot's current content.  Any item or
+    -- spell that was previously occupying the target slot is now on the cursor.  During
+    -- profile restoration we never want that swapped-out content — always discard it so
+    -- it cannot leak into subsequent pickup checks or land in an unrelated slot.
+    if ClearCursor then
+        ClearCursor()
+    end
+end
+
+-- Returns true when spellID is known by or appears in the player's current spellbook,
+-- meaning it can be placed on the action bar.  Used by ActionResolver to skip spells
+-- that belong to a different class or inactive spec without emitting spurious errors.
+function SlotFiller.ActionAPI.IsSpellRestorable(spellID)
+    if not spellID then return false end
+    if C_SpellBook then
+        if C_SpellBook.IsSpellKnownOrInSpellBook then
+            -- includeOverrides = true catches talent-overridden base spells.
+            return C_SpellBook.IsSpellKnownOrInSpellBook(spellID, PLAYER_SPELL_BANK, true) == true
+        end
+        if C_SpellBook.IsSpellKnown then
+            return C_SpellBook.IsSpellKnown(spellID, PLAYER_SPELL_BANK) == true
+        end
+    end
+    -- API unavailable (test host or pre-Midnight build): assume valid and let the
+    -- pickup attempt determine restorability.
+    return true
 end
 
 function SlotFiller.ActionAPI.PickupSpellID(spellID)
@@ -105,6 +131,45 @@ function SlotFiller.ActionAPI.PickupSpellID(spellID)
                 return true
             end
             if ClearCursor then ClearCursor() end
+        end
+    end
+
+    return false
+end
+
+-- Picks up a zone ability (Draenor outpost, garrison, or similar) for placement on the
+-- action bar.  Zone abilities are hidden from the spellbook and cannot be found via
+-- BuildSpellBookCache; they must be retrieved through C_ZoneAbility.GetActiveAbilities.
+--
+-- targetSpellID - spell ID of the zone ability as saved in the profile.
+--
+-- Pass 1: exact match (player is in the same zone as when the profile was saved).
+-- Pass 2: any active zone ability.  WoW dynamically updates the zone-ability slot to
+--         the correct ability for the current zone regardless of which ID was placed.
+--
+-- Returns true if a zone ability was placed on the cursor, false otherwise.
+function SlotFiller.ActionAPI.PickupZoneAbility(targetSpellID)
+    if not C_ZoneAbility or not C_ZoneAbility.GetActiveAbilities then
+        return false
+    end
+    local abilities = C_ZoneAbility.GetActiveAbilities()
+    if not abilities or #abilities == 0 then
+        return false
+    end
+
+    for _, ability in ipairs(abilities) do
+        if ability.spellID == targetSpellID then
+            if SlotFiller.ActionAPI.PickupSpellID(targetSpellID) then
+                return true
+            end
+        end
+    end
+
+    for _, ability in ipairs(abilities) do
+        if ability.spellID then
+            if SlotFiller.ActionAPI.PickupSpellID(ability.spellID) then
+                return true
+            end
         end
     end
 
@@ -151,19 +216,74 @@ function SlotFiller.ActionAPI.PickupItemID(itemID)
     return GetCursorInfo and GetCursorInfo() == "item"
 end
 
+-- Builds a cache of flyoutID -> spellBookIndex for all flyout entries visible in the
+-- current spec's spellbook.  Used as a fallback by PickupFlyoutID for newer flyouts
+-- (e.g. Midnight portal menus) that cannot be picked up directly by flyout ID.
+function SlotFiller.ActionAPI.BuildFlyoutBookCache()
+    local cache = {}
+    if not C_SpellBook or not C_SpellBook.GetNumSpellBookSkillLines then
+        return cache
+    end
+    for tabIndex = 1, C_SpellBook.GetNumSpellBookSkillLines() do
+        local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tabIndex)
+        if skillLineInfo and not skillLineInfo.isGuild and isOnCurrentSpecSkillLine(skillLineInfo) then
+            local offset = skillLineInfo.itemIndexOffset or 0
+            local numSpells = skillLineInfo.numSpellBookItems or 0
+            for spellIndex = 1, numSpells do
+                local bookIndex = offset + spellIndex
+                local itemInfo = SlotFiller.ActionAPI.GetSpellBookItemInfo(bookIndex)
+                if itemInfo and itemInfo.actionID then
+                    local isFlyout = false
+                    if Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout then
+                        isFlyout = itemInfo.itemType == Enum.SpellBookItemType.Flyout
+                    elseif type(itemInfo.itemType) == "string" then
+                        isFlyout = string.lower(itemInfo.itemType) == "flyout"
+                    end
+                    if isFlyout then
+                        cache[itemInfo.actionID] = bookIndex
+                    end
+                end
+            end
+        end
+    end
+    return cache
+end
+
 function SlotFiller.ActionAPI.PickupFlyoutID(flyoutID)
     if not flyoutID then
         return false
     end
+
+    local function cursorIsValid()
+        local t = GetCursorInfo and GetCursorInfo()
+        return t ~= nil and t ~= ""
+    end
+
+    -- Primary: direct pickup by flyout ID (works for most legacy flyouts).
     if C_Spell and C_Spell.PickupSpell then
         C_Spell.PickupSpell(flyoutID)
+        if cursorIsValid() then return true end
+        if ClearCursor then ClearCursor() end
     elseif PickupSpell then
         PickupSpell(flyoutID)
-    else
-        return false
+        if cursorIsValid() then return true end
+        if ClearCursor then ClearCursor() end
     end
-    local cursorType = GetCursorInfo and GetCursorInfo()
-    return cursorType == "flyout" or cursorType == "spell"
+
+    -- Fallback: find the flyout in the spellbook and use PickupSpellBookItem.
+    -- Newer Midnight flyouts (e.g. Hero's Path portal menus) have flyout IDs that
+    -- cannot be resolved via PickupSpell but are accessible as spellbook entries.
+    if C_SpellBook and C_SpellBook.PickupSpellBookItem then
+        local flyoutCache = SlotFiller.ActionAPI.BuildFlyoutBookCache()
+        local bookIndex = flyoutCache[flyoutID]
+        if bookIndex then
+            C_SpellBook.PickupSpellBookItem(bookIndex, PLAYER_SPELL_BANK)
+            if cursorIsValid() then return true end
+            if ClearCursor then ClearCursor() end
+        end
+    end
+
+    return false
 end
 
 -- Attempts to pick up a mount from the Mount Journal by matching its summon spell ID.
@@ -246,6 +366,17 @@ function SlotFiller.ActionAPI.PickupEquipmentSetName(setName)
         end
     end
     return false
+end
+
+-- Picks up a battle pet from the Pet Journal by its GUID for placement on the action bar.
+-- The petGUID is the full string ID returned by GetActionInfo for a "summonpet" slot
+-- (e.g. "BattlePet-0-00000B4B64D9").
+function SlotFiller.ActionAPI.PickupBattlePet(petGUID)
+    if not petGUID then return false end
+    if not C_PetJournal or not C_PetJournal.PickupPet then return false end
+    local ok = pcall(C_PetJournal.PickupPet, petGUID)
+    if not ok then return false end
+    return GetCursorInfo and GetCursorInfo() == "battlepet"
 end
 
 function SlotFiller.ActionAPI.GetSpellBookItemInfo(bookIndex)

@@ -207,6 +207,7 @@ function support.load_full(root)
         chunk("SlotFiller", SlotFiller)
     end
     load("Core/ActionAPI.lua")
+    load("Core/ActionResolver.lua")
     load("Core/Restorer.lua")
 end
 

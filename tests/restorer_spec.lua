@@ -211,4 +211,157 @@ runner:test("ApplyProfile accumulates one error per unresolvable macro slot", fu
     support.assert.equal(errCount, 1, "one error recorded")
 end)
 
+-- ---------------------------------------------------------------------------
+-- Contamination regression — pre-clear behaviour
+-- ---------------------------------------------------------------------------
+
+runner:test("empty slot in profile causes ClearSlot even when bar slot has content", function()
+    local clearedSlots = {}
+    local originalClearSlot = SlotFiller.ActionAPI.ClearSlot
+    -- ClearSlot uses dot-notation (no self); first arg is actionID.
+    SlotFiller.ActionAPI.ClearSlot = function(actionID)
+        clearedSlots[actionID] = true
+    end
+
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    -- Profile with nothing in slot 7 and nothing in slot 8.
+    local profile = { slots = {} }
+    R:ApplyProfile(profile)
+
+    -- Restore before asserting so the stub never leaks into subsequent tests.
+    SlotFiller.ActionAPI.ClearSlot = originalClearSlot
+
+    support.assert.isTrue(clearedSlots[7] == true, "slot 7 cleared when profile has no entry")
+    support.assert.isTrue(clearedSlots[8] == true, "slot 8 cleared when profile has no entry")
+end)
+
+runner:test("RestoreSlot pre-clears the slot before attempting pickup", function()
+    local clearCount = 0
+    local originalClearSlot = SlotFiller.ActionAPI.ClearSlot
+    SlotFiller.ActionAPI.ClearSlot = function(actionID)
+        if actionID == 5 then clearCount = clearCount + 1 end
+    end
+    local originalPickup = SlotFiller.ActionAPI.PickupItemID
+    SlotFiller.ActionAPI.PickupItemID = function() return false end
+
+    local caches = { spell = {}, flyout = {}, macroBody = {}, macroName = {}, macroID = {} }
+    SlotFiller.State:ResetForTests()
+    R:RestoreSlot(5, { type = C.ACTION_TYPE.ITEM, id = 999, name = "Missing Item" }, caches)
+
+    -- Restore before asserting.
+    SlotFiller.ActionAPI.ClearSlot    = originalClearSlot
+    SlotFiller.ActionAPI.PickupItemID = originalPickup
+
+    support.assert.equal(clearCount, 1, "ClearSlot called once before failed pickup")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Off-spec spell — silent skip
+-- ---------------------------------------------------------------------------
+
+runner:test("off-spec spell is silently skipped with no error", function()
+    -- IsSpellRestorable returns false → skip with no error.
+    local originalRestorable = SlotFiller.ActionAPI.IsSpellRestorable
+    SlotFiller.ActionAPI.IsSpellRestorable = function() return false end
+
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local profile = {
+        slots = {
+            [1] = { type = C.ACTION_TYPE.SPELL, id = 12345, name = "Paladin Spell" },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+    SlotFiller.ActionAPI.IsSpellRestorable = originalRestorable
+
+    support.assert.equal(ok, true, "apply succeeds")
+    support.assert.equal(errCount, 0, "no error for off-spec spell")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Zone ability — error when not restorable
+-- ---------------------------------------------------------------------------
+
+runner:test("zone ability failure records an error", function()
+    -- Stub zone ability API to return nothing (not in a Draenor zone).
+    _G.C_ZoneAbility = { GetActiveAbilities = function() return {} end }
+
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local profile = {
+        slots = {
+            [32] = { type = C.ACTION_TYPE.SPELL, id = 161676, name = "Call to Arms", isZoneAbility = true },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+    _G.C_ZoneAbility = nil
+
+    support.assert.equal(ok, true, "apply succeeds even with zone ability failure")
+    support.assert.equal(errCount, 1, "one error for unrestorable zone ability")
+    support.assert.isTrue(
+        R:GetLastErrorsText():find("slot 32") ~= nil,
+        "error message mentions the slot number")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Battle pet — success and failure
+-- ---------------------------------------------------------------------------
+
+runner:test("summonpet slot succeeds when pet is in the collection", function()
+    _G.C_PetJournal = {
+        PickupPet = function(guid)
+            if guid == "BattlePet-0-00000B4B64D9" then
+                _G._fakeCursor = "battlepet"
+            end
+        end,
+    }
+    _G.GetCursorInfo = function() return _G._fakeCursor end
+
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local profile = {
+        slots = {
+            [48] = { type = C.ACTION_TYPE.SUMMONPET, id = "BattlePet-0-00000B4B64D9", name = "Wee Stinker" },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+
+    _G.C_PetJournal = nil
+    _G.GetCursorInfo = nil
+    _G._fakeCursor   = nil
+
+    support.assert.equal(ok, true, "apply succeeds")
+    support.assert.equal(errCount, 0, "no error when pet found")
+end)
+
+runner:test("summonpet slot records an error when pet is not in the collection", function()
+    _G.C_PetJournal = { PickupPet = function() end }  -- pickup does nothing; cursor stays nil
+    _G.GetCursorInfo = function() return nil end
+
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local profile = {
+        slots = {
+            [48] = { type = C.ACTION_TYPE.SUMMONPET, id = "BattlePet-0-DEADBEEF0000", name = "Gone Pet" },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+
+    _G.C_PetJournal  = nil
+    _G.GetCursorInfo = nil
+
+    support.assert.equal(ok, true, "apply still returns true")
+    support.assert.equal(errCount, 1, "one error for missing pet")
+    support.assert.isTrue(
+        R:GetLastErrorsText():find("slot 48") ~= nil,
+        "error mentions slot 48")
+end)
+
 os.exit(runner:run())

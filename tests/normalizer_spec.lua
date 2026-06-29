@@ -81,13 +81,24 @@ runner:test("FromRaw normalises all action types", function()
     local eset = N.FromRaw({ type = "equipmentset", id = "Tank Gear", name = "Tank Gear" })
     support.assert.equal(eset.type, "equipmentset", "equipmentset type")
     support.assert.equal(eset.id,   "Tank Gear",    "equipmentset id")
+
+    -- summonpet
+    local pet = N.FromRaw({ type = "summonpet", id = "BattlePet-0-00000B4B64D9", name = "Wee Stinker" })
+    support.assert.equal(pet.type, "summonpet",                "summonpet type")
+    support.assert.equal(pet.id,   "BattlePet-0-00000B4B64D9", "summonpet id (GUID)")
+    support.assert.equal(pet.name, "Wee Stinker",              "summonpet name")
 end)
 
 runner:test("FromRaw returns nil for invalid inputs", function()
-    support.assert.isNil(N.FromRaw(nil),                             "nil raw")
-    support.assert.isNil(N.FromRaw({}),                              "no type field")
-    support.assert.isNil(N.FromRaw({ type = "spell", id = nil }),    "spell with nil id")
+    support.assert.isNil(N.FromRaw(nil),                                "nil raw")
+    support.assert.isNil(N.FromRaw({}),                                 "no type field")
+    support.assert.isNil(N.FromRaw({ type = "spell",      id = nil }), "spell with nil id")
     support.assert.isNil(N.FromRaw({ type = "summonmount", id = nil }), "summonmount with nil id")
+    support.assert.isNil(N.FromRaw({ type = "summonpet",   id = nil }), "summonpet with nil id")
+end)
+
+runner:test("IsSupportedActionType recognises summonpet", function()
+    support.assert.equal(N.IsSupportedActionType(C.ACTION_TYPE.SUMMONPET), true, "summonpet supported")
 end)
 
 runner:test("FromRaw wraps unrecognised action types as UNKNOWN", function()

@@ -67,6 +67,18 @@ function SlotFiller.Scanner:ReadSlot(actionID)
 
     if actionType == Constants.ACTION_TYPE.SPELL then
         raw.name = getSpellName(id)
+        -- Detect Draenor/zone abilities (hidden from spellbook; managed by C_ZoneAbility).
+        -- Tagging them here lets the Restorer use the correct pickup path and surface a
+        -- meaningful error if restoration fails rather than silently skipping the slot.
+        if C_ZoneAbility and C_ZoneAbility.GetActiveAbilities then
+            local zoneAbilities = C_ZoneAbility.GetActiveAbilities()
+            for _, za in ipairs(zoneAbilities or {}) do
+                if za.spellID == id then
+                    raw.isZoneAbility = true
+                    break
+                end
+            end
+        end
     elseif actionType == Constants.ACTION_TYPE.ITEM then
         raw.name = getItemName(id)
     elseif actionType == Constants.ACTION_TYPE.MACRO then
@@ -75,6 +87,13 @@ function SlotFiller.Scanner:ReadSlot(actionID)
         raw.body = body
     elseif actionType == Constants.ACTION_TYPE.FLYOUT then
         raw.name = getFlyoutName(id)
+    elseif actionType == Constants.ACTION_TYPE.SUMMONPET then
+        -- id is a GUID string (e.g. "BattlePet-0-00000B4B64D9").
+        -- Attempt to resolve a display name for use in error messages.
+        if C_PetJournal and C_PetJournal.GetPetInfoByPetID and id then
+            local _, customName, _, _, _, _, _, speciesName = C_PetJournal.GetPetInfoByPetID(id)
+            raw.name = customName or speciesName
+        end
     elseif actionType == Constants.ACTION_TYPE.EQUIPMENTSET then
         raw.name = id
     end

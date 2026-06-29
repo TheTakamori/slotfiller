@@ -29,6 +29,7 @@ SlotFiller.Constants = {
         COMPANION = "companion",
         EQUIPMENTSET = "equipmentset",
         SUMMONMOUNT = "summonmount",
+        SUMMONPET = "summonpet",
         -- Storage-only passthrough for native WoW types not explicitly handled above
         UNKNOWN = "unknown",
     },

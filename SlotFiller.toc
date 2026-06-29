@@ -12,6 +12,7 @@ Core/Text.lua
 Core/Defaults.lua
 Core/Context.lua
 Core/ActionAPI.lua
+Core/ActionResolver.lua
 Core/Normalizer.lua
 Core/Scanner.lua
 Core/Restorer.lua

@@ -2,6 +2,7 @@ local _, SlotFiller = ...
 
 local Constants = SlotFiller.Constants
 local ActionAPI = SlotFiller.ActionAPI
+local Text = SlotFiller.Text
 
 SlotFiller.Restorer = {
     lastErrors = {},
@@ -134,146 +135,35 @@ function SlotFiller.Restorer:RestoreSBASlot(actionID, spareSBASlots)
     end
 end
 
-function SlotFiller.Restorer:RestoreSlot(actionID, slot, spellCache, macroBodyCache, macroNameCache, macroIDCache)
+function SlotFiller.Restorer:RestoreSlot(actionID, slot, caches)
+    if ClearCursor then ClearCursor() end
+
+    -- SBA buttons cannot be recreated once removed; always preserve them regardless
+    -- of what the profile says.  SBA target slots are placed by the dedicated pre-pass
+    -- and are excluded from Pass 2, so this guard handles only the case where a
+    -- non-SBA profile entry would otherwise displace an existing SBA button.
+    if slotIsAssistedCombat(actionID) then
+        return
+    end
+
     if not slot then
-        -- SBA slots cannot be recreated programmatically once removed; preserve them
-        -- rather than clearing, even when the profile has no entry for this slot.
-        if slotIsAssistedCombat(actionID) then
-            return
-        end
         ActionAPI.ClearSlot(actionID)
         return
     end
 
-    if slot.type == Constants.ACTION_TYPE.SPELL then
-        -- Preserve an existing Assisted Combat (SBA) button.
-        if slotIsAssistedCombat(actionID) then
-            return
-        end
-        local picked = false
-        -- Prefer spellbook-slot pickup over direct spell pickup so that special spellbook
-        -- entries (proc abilities, etc.) are dragged as-is.
-        if slot.id and spellCache[slot.id] then
-            picked = ActionAPI.PickupSpellBookIndex(spellCache[slot.id])
-        end
-        if not picked and slot.name and spellCache[slot.name] then
-            picked = ActionAPI.PickupSpellBookIndex(spellCache[slot.name])
-        end
-        if not picked and slot.name and spellCache[string.lower(slot.name)] then
-            picked = ActionAPI.PickupSpellBookIndex(spellCache[string.lower(slot.name)])
-        end
-        -- Fallback: direct pickup by spell ID
-        if not picked and slot.id then
-            picked = ActionAPI.PickupSpellID(slot.id)
-        end
-        -- Last resort: mount journal (handles mount summon spells absent from the regular spellbook)
-        if not picked and slot.id then
-            picked = ActionAPI.PickupMountBySpellID(slot.id)
-        end
-        if not picked then
-            -- Spell not available for this spec — skip silently rather than error.
-            if ClearCursor then ClearCursor() end
-            return
-        end
-        ActionAPI.PlaceSlot(actionID)
-        return
-    end
+    -- Pre-clear ensures stale content from a previous profile cannot persist when the
+    -- new profile's action for this slot fails to restore (off-spec spell, deleted
+    -- macro, pet no longer in collection, etc.).
+    ActionAPI.ClearSlot(actionID)
 
-    if slot.type == Constants.ACTION_TYPE.MACRO then
-        local macroID = self:FindMacroID(slot, macroBodyCache, macroNameCache, macroIDCache)
-        if not macroID or not ActionAPI.PickupMacroID(macroID) then
-            addError(self, string.format("Unable to restore macro %s to slot %d.", slot.name or slot.body or "?", actionID))
-            if ClearCursor then ClearCursor() end
-            return
-        end
+    local picked, errMsg = SlotFiller.ActionResolver.PickupToCursor(slot, actionID, caches)
+    if picked then
         ActionAPI.PlaceSlot(actionID)
-        return
-    end
-
-    if slot.type == Constants.ACTION_TYPE.ITEM then
-        if not ActionAPI.PickupItemID(slot.id) then
-            addError(self, string.format("Unable to restore item %s to slot %d.", slot.name or tostring(slot.id), actionID))
-            if ClearCursor then ClearCursor() end
-            return
+    else
+        if errMsg then
+            addError(self, errMsg)
         end
-        ActionAPI.PlaceSlot(actionID)
-        return
-    end
-
-    if slot.type == Constants.ACTION_TYPE.FLYOUT then
-        if not ActionAPI.PickupFlyoutID(slot.id) then
-            addError(self, string.format("Unable to restore flyout %s to slot %d.", slot.name or tostring(slot.id), actionID))
-            if ClearCursor then ClearCursor() end
-            return
-        end
-        ActionAPI.PlaceSlot(actionID)
-        return
-    end
-
-    if slot.type == Constants.ACTION_TYPE.SUMMONMOUNT then
-        if not ActionAPI.PickupMountByID(slot.id) then
-            addError(self, string.format("Unable to restore mount (id=%s) to slot %d.", tostring(slot.id), actionID))
-            if ClearCursor then ClearCursor() end
-            return
-        end
-        ActionAPI.PlaceSlot(actionID)
-        return
-    end
-
-    if slot.type == Constants.ACTION_TYPE.UNKNOWN then
-        local rawType = slot.rawType
-        local picked = false
-        if rawType == "companion" then
-            if PickupCompanion and slot.subType then
-                pcall(PickupCompanion, slot.subType, slot.id)
-                local cursorType = GetCursorInfo and GetCursorInfo()
-                picked = cursorType ~= nil and cursorType ~= ""
-            end
-            if not picked and slot.id then
-                picked = ActionAPI.PickupMountBySpellID(slot.id)
-            end
-        elseif rawType == "summonmount" then
-            picked = ActionAPI.PickupMountByID(slot.id)
-        end
-        if not picked then
-            addError(self, string.format("Cannot restore action type '%s' in slot %d. Use /sfill scan for details.", tostring(rawType), actionID))
-            return
-        end
-        ActionAPI.PlaceSlot(actionID)
-        return
-    end
-
-    if slot.type == Constants.ACTION_TYPE.COMPANION then
-        local picked = false
-        -- Try legacy PickupCompanion first (still present in Midnight for pet companions).
-        if PickupCompanion and slot.subType then
-            pcall(PickupCompanion, slot.subType, slot.id)
-            local ct = GetCursorInfo and GetCursorInfo()
-            -- Midnight may return "mount" instead of "companion" after PickupCompanion.
-            picked = ct == "companion" or ct == "mount"
-        end
-        -- Fallback: treat the companion id as a spell/mount ID (most Midnight companion
-        -- mounts surface this way) and use the spell/mount-journal pickup path.
-        if not picked and slot.id then
-            picked = ActionAPI.PickupMountBySpellID(slot.id)
-        end
-        if not picked then
-            addError(self, string.format("Unable to restore companion to slot %d.", actionID))
-            if ClearCursor then ClearCursor() end
-            return
-        end
-        ActionAPI.PlaceSlot(actionID)
         if ClearCursor then ClearCursor() end
-        return
-    end
-
-    if slot.type == Constants.ACTION_TYPE.EQUIPMENTSET then
-        if not ActionAPI.PickupEquipmentSetName(slot.id) then
-            addError(self, string.format("Unable to restore equipment set %s to slot %d.", tostring(slot.id), actionID))
-            if ClearCursor then ClearCursor() end
-            return
-        end
-        ActionAPI.PlaceSlot(actionID)
     end
 end
 
@@ -298,8 +188,14 @@ function SlotFiller.Restorer:ApplyProfile(profile)
         SetCVar("Sound_EnableAllSound", "0")
     end
 
-    local spellCache = ActionAPI.BuildSpellBookCache()
     local macroBodyCache, macroNameCache, macroIDCache = self:BuildMacroCache()
+    local caches = {
+        spell     = ActionAPI.BuildSpellBookCache(),
+        flyout    = ActionAPI.BuildFlyoutBookCache(),
+        macroBody = macroBodyCache,
+        macroName = macroNameCache,
+        macroID   = macroIDCache,
+    }
 
     -- Identify which profile slots need an Assisted Combat (SBA) button.
     local sbaTargetSet = {}
@@ -333,10 +229,10 @@ function SlotFiller.Restorer:ApplyProfile(profile)
         end
     end
 
-    -- Pass 2: Restore all remaining (non-SBA) slots normally.
+    -- Pass 2: Restore all remaining (non-SBA) slots.
     for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
         if not sbaTargetSet[actionID] then
-            self:RestoreSlot(actionID, profile.slots[actionID], spellCache, macroBodyCache, macroNameCache, macroIDCache)
+            self:RestoreSlot(actionID, profile.slots[actionID], caches)
         end
     end
 
@@ -353,7 +249,7 @@ end
 
 function SlotFiller.Restorer:GetLastErrorsText()
     if #self.lastErrors == 0 then
-        return SlotFiller.Text.NO_ERRORS
+        return Text.NO_ERRORS
     end
     return table.concat(self.lastErrors, "\n")
 end
