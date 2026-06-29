@@ -66,6 +66,11 @@ function SlotFiller.SlashParser.Parse(message)
     if verb == Constants.COMMAND.ERRORS then
         return { verb = Constants.COMMAND.ERRORS }
     end
+    -- Explicit "open" typed as a word (empty input uses the early-return path above).
+    if verb == Constants.COMMAND.OPEN then
+        return { verb = Constants.COMMAND.OPEN }
+    end
+    -- Guard: prevent reserved command words from being treated as profile shorthand-loads.
     if Constants.RESERVED_COMMANDS[verb] then
         return { verb = verb }
     end
@@ -87,6 +92,7 @@ local function showHelp()
     SlotFiller.Print(Text.SLASH_HELP_RENAME)
     SlotFiller.Print(Text.SLASH_HELP_DUPLICATE)
     SlotFiller.Print(Text.SLASH_HELP_MINIMAP)
+    SlotFiller.Print(Text.SLASH_HELP_SCAN)
     SlotFiller.Print(Text.SLASH_HELP_HELP)
 end
 

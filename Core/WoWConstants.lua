@@ -2,8 +2,9 @@ local _, SlotFiller = ...
 
 SlotFiller.WoWConstants = {
     EVENT = {
-        ADDON_LOADED = "ADDON_LOADED",
-        PLAYER_LOGIN = "PLAYER_LOGIN",
+        ADDON_LOADED                  = "ADDON_LOADED",
+        PLAYER_LOGIN                  = "PLAYER_LOGIN",
+        PLAYER_SPECIALIZATION_CHANGED = "PLAYER_SPECIALIZATION_CHANGED",
     },
 
     UI = {

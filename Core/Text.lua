@@ -12,7 +12,7 @@ SlotFiller.Text = {
     SAVE_EMPTY = "Saved profile %s, but no slots were captured. Make sure actions are on your action bars.",
     DELETE_SUCCESS = "Deleted profile %s.",
     RENAME_SUCCESS = "Renamed %s to %s.",
-    DUPLICATE_SUCCESS = "Duplicated %s to %s.",
+    DUPLICATE_SUCCESS = "Duplicated %s as %s.",
 
     PROFILE_NOT_FOUND = "No profile named %s.",
     PROFILE_EXISTS = "Profile %s already exists.",
@@ -38,7 +38,7 @@ SlotFiller.Text = {
     UI_DELETE = "Delete",
     UI_ACTIVE = "Active: %s",
     UI_CONFIRM_DELETE = "Delete profile %s?",
-    UI_CONFIRM_OVERWRITE = "Overwrite profile %s with current bar?",
+    UI_CONFIRM_OVERWRITE = "Update profile %s with current bar?",
     UI_RENAME_PROMPT = "Rename %s to:",
     UI_DUPLICATE_PROMPT = "Duplicate %s as:",
     -- Dropdown labels
@@ -46,10 +46,22 @@ SlotFiller.Text = {
     UI_CHARACTERS_LABEL  = "Characters:",
     UI_CLASSES_LABEL     = "Classes:",
     UI_SPECS_LABEL       = "Specs:",
-    UI_PROFILE_NONE      = "— no profiles saved —",
+    UI_PROFILE_NONE      = "No profiles saved.",
     UI_AUTOLOAD_ANY      = "Any",
-    UI_NO_CHARACTERS     = "— log in on a character first —",
+    UI_NO_CHARACTERS     = "Log in on a character first.",
     UI_AUTOLOAD_ENABLED  = "Allow Profile Auto Load",
+    UI_AUTOLOAD_TITLE    = "Allow Profile Auto Load",
+    UI_AUTOLOAD_HINT     =
+        "When enabled, SlotFiller automatically loads a matching profile "
+        .. "when you log in or switch specializations.\n\n"
+        .. "A profile matches when none of its filters conflict with your "
+        .. "current character, class, or specialization. Leave a filter set "
+        .. "to Any to match all values for that dimension.\n\n"
+        .. "If multiple profiles qualify, ones that explicitly list your "
+        .. "character are preferred. Among those, the most specific match "
+        .. "by class and specialization wins.",
+    -- Copy frame
+    UI_COPY_HINT = "Text is selected. Press Ctrl+C to copy, then close.",
     -- SBA
     UI_SBA_WARNING = "SBA Warning",
     UI_SBA_HINT = "SlotFiller can move an existing Rotation Assistant (SBA) button between slots, but cannot create one from scratch — this is a known Blizzard limitation.\n\nThis only matters if you switch between profiles where one has an SBA button and one does not. If no SBA button is present on any bar when loading, it cannot be placed.\n\nFix: keep an SBA button somewhere on every profile (even off-screen), so it is always available to move. Note: macros containing SBA functionality are not affected — SlotFiller handles those normally.",
@@ -69,7 +81,7 @@ SlotFiller.Text = {
     SLASH_HELP_LIST = Constants.SLASH_COMMAND .. " list - List saved profiles",
     SLASH_HELP_DELETE = Constants.SLASH_COMMAND .. " delete <name> - Delete a profile",
     SLASH_HELP_RENAME = Constants.SLASH_COMMAND .. " rename <old> <new> - Rename a profile",
-    SLASH_HELP_DUPLICATE = Constants.SLASH_COMMAND .. " duplicate <source> <new> - Copy a profile",
+    SLASH_HELP_DUPLICATE = Constants.SLASH_COMMAND .. " duplicate <source> <new> - Duplicate a profile",
     SLASH_HELP_MINIMAP = Constants.SLASH_COMMAND .. " minimap - Show or hide the minimap button",
     SLASH_HELP_SCAN = Constants.SLASH_COMMAND .. " scan - Print raw action type/ID for every occupied slot (diagnostic)",
     SLASH_HELP_HELP = Constants.SLASH_COMMAND .. " help - Show this help",

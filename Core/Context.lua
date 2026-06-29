@@ -132,12 +132,3 @@ function SlotFiller.Context.RequireNotInCombat()
     return true
 end
 
-function SlotFiller.Context.GetScope()
-    local specIndex = SlotFiller.Context.GetSpecIndex()
-    if not specIndex then
-        return nil
-    end
-    return {
-        specName = SlotFiller.Context.GetSpecName(specIndex),
-    }
-end

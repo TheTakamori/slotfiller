@@ -1,6 +1,7 @@
 local _, SlotFiller = ...
 
 local Constants = SlotFiller.Constants
+local Text = SlotFiller.Text
 
 SlotFiller.UI = SlotFiller.UI or {}
 SlotFiller.UI.CopyFrame = {}
@@ -24,7 +25,7 @@ local function build()
 
     local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     hint:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -30)
-    hint:SetText("Text is selected — press Ctrl+C to copy, then close.")
+    hint:SetText(Text.UI_COPY_HINT)
     hint:SetTextColor(0.68, 0.68, 0.68, 1)
 
     local sf = CreateFrame("ScrollFrame", "SlotFillerCopyScrollFrame", frame, "UIPanelScrollFrameTemplate")

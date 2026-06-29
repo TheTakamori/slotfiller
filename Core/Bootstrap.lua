@@ -7,7 +7,7 @@ local WoW = SlotFiller.WoWConstants
 local events = CreateFrame(WoW.UI.FRAME)
 events:RegisterEvent(WoW.EVENT.ADDON_LOADED)
 events:RegisterEvent(WoW.EVENT.PLAYER_LOGIN)
-events:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+events:RegisterEvent(WoW.EVENT.PLAYER_SPECIALIZATION_CHANGED)
 
 -- Resolves the best auto-load profile for the current context and loads it.
 -- If no profile has "Allow Profile Auto Load" enabled, nothing is loaded.
@@ -34,7 +34,7 @@ local function triggerAutoLoad()
     end
 
     if C_Timer and C_Timer.After then
-        C_Timer.After(0.5, apply)
+        C_Timer.After(Constants.AUTOLOAD_DELAY_SEC, apply)
     else
         apply()
     end
@@ -67,7 +67,7 @@ events:SetScript(WoW.UI.ON_EVENT, function(_, event, arg1)
         return
     end
 
-    if event == "PLAYER_SPECIALIZATION_CHANGED" then
+    if event == WoW.EVENT.PLAYER_SPECIALIZATION_CHANGED then
         if SlotFiller.UI.MainFrame.frame and SlotFiller.UI.MainFrame.frame:IsShown() then
             SlotFiller.UI.MainFrame:Refresh()
         end

@@ -23,6 +23,32 @@ local function silencePrint()
     SlotFiller.Print = function() end
 end
 
+local function capturePrint()
+    local lines = {}
+    SlotFiller.Print = function(msg) lines[#lines + 1] = msg end
+    return lines
+end
+
+-- Stubs Restorer:ApplyProfile to return the given ok/result pair.
+local function stubRestorer(ok, result)
+    SlotFiller.Restorer = SlotFiller.Restorer or {}
+    SlotFiller.Restorer.ApplyProfile = function(_, _) return ok, result end
+end
+
+-- Stubs Scanner so that CaptureCurrentProfile returns a profile with a given slot count.
+local function stubScannerWithSlots(count)
+    local slots = {}
+    for i = 1, count do
+        slots[i] = { type = "spell", id = i }
+    end
+    SlotFiller.Scanner = SlotFiller.Scanner or {}
+    SlotFiller.Scanner.CaptureCurrentProfile = function()
+        return { savedAt = 1, slots = slots }
+    end
+    SlotFiller.Normalizer = SlotFiller.Normalizer or {}
+    SlotFiller.Normalizer.CountFilledSlots = function(_) return count end
+end
+
 -- ── Save (Save As) ────────────────────────────────────────────────────────────
 
 runner:test("Save creates a new profile with no autoLoad config", function()
@@ -77,6 +103,19 @@ runner:test("Save does not copy autoLoad from a different profile", function()
     support.assert.same(al.characters, {}, "new profile must start with empty characters")
 end)
 
+runner:test("Save prints SAVE_EMPTY when no slots captured", function()
+    SlotFiller.State:ResetForTests()
+    stubContext()
+    stubScannerWithSlots(0)
+    local lines = capturePrint()
+
+    SlotFiller.ProfileActions:Save("EmptyBar")
+    local combined = table.concat(lines, " ")
+    support.assert.isTrue(combined:find("EmptyBar") ~= nil, "profile name in output")
+    support.assert.isTrue(combined:find("no slots") ~= nil or combined:find("no slot") ~= nil
+        or combined:find("Make sure") ~= nil, "SAVE_EMPTY wording present")
+end)
+
 -- ── Load ──────────────────────────────────────────────────────────────────────
 
 runner:test("Load returns false for missing profile", function()
@@ -92,6 +131,42 @@ runner:test("Load returns false for empty name", function()
     silencePrint()
     support.assert.isFalse(SlotFiller.ProfileActions:Load(""),  "false for empty name")
     support.assert.isFalse(SlotFiller.ProfileActions:Load(nil), "false for nil name")
+end)
+
+runner:test("Load succeeds and sets active profile (clean restore)", function()
+    SlotFiller.State:ResetForTests()
+    stubContext()
+    stubRestorer(true, 0)
+    local lines = capturePrint()
+
+    SlotFiller.State:SetProfile("MyProfile", { savedAt = 1, slots = {} })
+    support.assert.isTrue(SlotFiller.ProfileActions:Load("MyProfile"), "Load returns true")
+    support.assert.equal(SlotFiller.State:GetActiveProfileName(), "MyProfile", "active profile updated")
+    local combined = table.concat(lines, " ")
+    support.assert.isTrue(combined:find("MyProfile") ~= nil, "profile name in output")
+end)
+
+runner:test("Load reports restore errors when issues exist", function()
+    SlotFiller.State:ResetForTests()
+    stubContext()
+    stubRestorer(true, 2)
+    local lines = capturePrint()
+
+    SlotFiller.State:SetProfile("IssueProfile", { savedAt = 1, slots = {} })
+    support.assert.isTrue(SlotFiller.ProfileActions:Load("IssueProfile"), "Load returns true")
+    local combined = table.concat(lines, " ")
+    support.assert.isTrue(combined:find("issue") ~= nil or combined:find("Issue") ~= nil,
+        "RESTORE_ERRORS wording present")
+end)
+
+runner:test("Load returns false when Restorer fails", function()
+    SlotFiller.State:ResetForTests()
+    stubContext()
+    stubRestorer(false, nil)
+    silencePrint()
+
+    SlotFiller.State:SetProfile("FailProfile", { savedAt = 1, slots = {} })
+    support.assert.isFalse(SlotFiller.ProfileActions:Load("FailProfile"), "false when restore fails")
 end)
 
 -- ── Delete ────────────────────────────────────────────────────────────────────
@@ -184,6 +259,18 @@ runner:test("Duplicate returns false when target already exists", function()
     support.assert.isFalse(SlotFiller.ProfileActions:Duplicate("Source", "Existing"), "clash rejected")
 end)
 
+runner:test("Duplicate success message uses 'as' preposition consistent with prompt", function()
+    SlotFiller.State:ResetForTests()
+    stubContext()
+    local lines = capturePrint()
+
+    SlotFiller.State:SetProfile("Src", { savedAt = 1, slots = {} })
+    SlotFiller.ProfileActions:Duplicate("Src", "Copy")
+    local combined = table.concat(lines, " ")
+    support.assert.isTrue(combined:find(" as ") ~= nil,
+        "success message should say 'Src as Copy', matching the Duplicate prompt wording")
+end)
+
 -- ── Overwrite ─────────────────────────────────────────────────────────────────
 
 runner:test("Overwrite returns false for non-existent profile", function()
@@ -191,6 +278,24 @@ runner:test("Overwrite returns false for non-existent profile", function()
     stubContext()
     silencePrint()
     support.assert.isFalse(SlotFiller.ProfileActions:Overwrite("Ghost"), "false for missing")
+end)
+
+runner:test("Overwrite updates an existing profile and preserves autoLoad", function()
+    SlotFiller.State:ResetForTests()
+    stubContext()
+    stubScanner()
+    silencePrint()
+
+    support.assert.isTrue(SlotFiller.ProfileActions:Save("ExistingProfile"))
+    SlotFiller.State:SetProfileAutoLoad("ExistingProfile", {
+        enabled = true, characters = { "Alice-Realm" }, classes = {}, specs = {},
+    })
+
+    support.assert.isTrue(SlotFiller.ProfileActions:Overwrite("ExistingProfile"), "Overwrite returns true")
+
+    local al = SlotFiller.State:GetProfileAutoLoad("ExistingProfile")
+    support.assert.equal(al.enabled, true, "autoLoad enabled preserved after Overwrite")
+    support.assert.same(al.characters, { "Alice-Realm" }, "characters preserved after Overwrite")
 end)
 
 -- ── List ──────────────────────────────────────────────────────────────────────

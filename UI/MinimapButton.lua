@@ -92,7 +92,7 @@ local function setButtonAngle(button, angle)
 end
 
 local function updateDragPosition(button)
-    if not button or not Minimap then
+    if not button or not Minimap or not GetCursorPosition then
         return
     end
 

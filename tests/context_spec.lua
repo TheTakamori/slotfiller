@@ -94,10 +94,6 @@ runner:test("GetSpecsForClass returns sorted specs when WoW APIs present", funct
     _G.GetSpecializationInfoForClassID  = nil
 end)
 
-runner:test("GetScope returns nil when spec APIs absent", function()
-    support.assert.isNil(SlotFiller.Context.GetScope())
-end)
-
 runner:test("IsCombatLocked returns falsy without WoW APIs", function()
     support.assert.isFalse(SlotFiller.Context.IsCombatLocked())
 end)

@@ -265,7 +265,18 @@ function MainFrame:SetupDropdownMenus()
     end
 
     rebuildClassesText = function()
-        frame.classDropdown:SetText(selectionSummary(selectedClasses))
+        if next(selectedClasses) == nil then
+            frame.classDropdown:SetText(Text.UI_AUTOLOAD_ANY)
+            return
+        end
+        local allClasses = SlotFiller.Context.GetAllClasses()
+        local names = {}
+        for _, ci in ipairs(allClasses) do
+            if selectedClasses[ci.file] then
+                names[#names + 1] = ci.name
+            end
+        end
+        frame.classDropdown:SetText(#names > 0 and table.concat(names, ", ") or Text.UI_AUTOLOAD_ANY)
     end
 
     rebuildCharsText = function()
@@ -426,16 +437,17 @@ function MainFrame:Ensure()
     frame.sbaWarningLabel = frame.sbaHover:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.sbaWarningLabel:SetPoint("BOTTOMLEFT", frame.sbaHover, "BOTTOMLEFT", 0, 0)
     frame.sbaWarningLabel:SetText(Text.UI_SBA_WARNING)
-    frame.sbaWarningLabel:SetTextColor(1, 0.6, 0, 1)
+    frame.sbaWarningLabel:SetTextColor(Colors.WARNING[1], Colors.WARNING[2], Colors.WARNING[3], Colors.WARNING[4])
     frame.sbaHover:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
         GameTooltip:ClearLines()
-        GameTooltip:AddLine(Text.UI_SBA_WARNING, 1, 0.6, 0)
+        GameTooltip:AddLine(Text.UI_SBA_WARNING, Colors.WARNING[1], Colors.WARNING[2], Colors.WARNING[3])
         GameTooltip:AddLine(Text.UI_SBA_HINT, 1, 1, 1, true)
         GameTooltip:Show()
     end)
     frame.sbaHover:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+        if GameTooltip then GameTooltip:Hide() end
     end)
 
     -- ── Profile dropdown ──
@@ -459,6 +471,25 @@ function MainFrame:Ensure()
     frame.autoLoadCheckLabel = frame.autoLoadCheck:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     frame.autoLoadCheckLabel:SetPoint("LEFT", frame.autoLoadCheck, "RIGHT", 2, 0)
     frame.autoLoadCheckLabel:SetText(Text.UI_AUTOLOAD_ENABLED)
+
+    -- Hover frame covers the checkbox icon + label so the tooltip fires anywhere
+    -- along the "Allow Profile Auto Load" row, not just over the 20×20 widget.
+    frame.autoLoadHover = CreateFrame("Frame", nil, frame)
+    frame.autoLoadHover:SetPoint("LEFT",  frame.autoLoadCheck,      "LEFT",  0, 0)
+    frame.autoLoadHover:SetPoint("RIGHT", frame.autoLoadCheckLabel, "RIGHT", 4, 0)
+    frame.autoLoadHover:SetHeight(20)
+    frame.autoLoadHover:EnableMouse(true)
+    frame.autoLoadHover:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine(Text.UI_AUTOLOAD_TITLE, 1, 1, 1)
+        GameTooltip:AddLine(Text.UI_AUTOLOAD_HINT, 0.9, 0.9, 0.9, true)
+        GameTooltip:Show()
+    end)
+    frame.autoLoadHover:SetScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
 
     -- ── Characters dropdown ──
     frame.charsLabel = createLabel(frame, Text.UI_CHARACTERS_LABEL, "GameFontNormalSmall")
@@ -526,7 +557,7 @@ function MainFrame:Ensure()
         local profileName = selectedProfile
         StaticPopupDialogs.SLOTFILLER_RENAME = {
             text = Text.UI_RENAME_PROMPT, button1 = ACCEPT, button2 = CANCEL,
-            hasEditBox = true, maxLetters = 32,
+            hasEditBox = true, maxLetters = Constants.MAX_PROFILE_NAME_LEN,
             OnAccept = function(dialog)
                 local oldName = dialog.data
                 local newName = getStaticPopupEditText(dialog)
@@ -560,7 +591,7 @@ function MainFrame:Ensure()
         local profileName = selectedProfile
         StaticPopupDialogs.SLOTFILLER_DUPLICATE = {
             text = Text.UI_DUPLICATE_PROMPT, button1 = ACCEPT, button2 = CANCEL,
-            hasEditBox = true, maxLetters = 32,
+            hasEditBox = true, maxLetters = Constants.MAX_PROFILE_NAME_LEN,
             OnAccept = function(dialog)
                 local sourceName = dialog.data
                 local newName    = getStaticPopupEditText(dialog)
@@ -611,7 +642,7 @@ function MainFrame:Ensure()
     frame.saveBox:SetAutoFocus(false)
     frame.saveBox:SetSize(Frame.SAVE_BOX_WIDTH, 24)
     frame.saveBox:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, Frame.SAVE_BOTTOM)
-    frame.saveBox:SetMaxLetters(32)
+    frame.saveBox:SetMaxLetters(Constants.MAX_PROFILE_NAME_LEN)
     self:SetupSaveBox(frame.saveBox)
 
     frame.saveButton = createButton(frame, Text.UI_SAVE, Frame.SAVE_BUTTON_WIDTH)

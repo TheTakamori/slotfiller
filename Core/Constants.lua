@@ -1,13 +1,16 @@
 local _, SlotFiller = ...
 
 SlotFiller.Constants = {
-    VERSION = "1.1.0",
+    VERSION = "1.1.1",
     ADDON_NAME = "SlotFiller",
     ADDON_TITLE = "Slot Filler",
     SAVED_VARIABLES = "SlotFillerDB",
     SLASH_COMMAND = "/sfill",
 
     DB_VERSION = 3,
+
+    MAX_PROFILE_NAME_LEN = 32,
+    AUTOLOAD_DELAY_SEC   = 0.5,
 
     SLOT_MIN = 1,
     -- Full action-slot range:
@@ -99,11 +102,12 @@ SlotFiller.Constants = {
     },
 
     COLORS = {
-        BODY = { 0.04, 0.04, 0.04, 0.92 },
-        BORDER = { 0.22, 0.22, 0.22, 1 },
-        TEXT = { 0.92, 0.92, 0.92, 1 },
-        MUTED = { 0.68, 0.68, 0.68, 1 },
+        BODY        = { 0.04, 0.04, 0.04, 0.92 },
+        BORDER      = { 0.22, 0.22, 0.22, 1 },
+        TEXT        = { 0.92, 0.92, 0.92, 1 },
+        MUTED       = { 0.68, 0.68, 0.68, 1 },
         PLACEHOLDER = { 0.45, 0.45, 0.45, 1 },
+        WARNING     = { 1,    0.6,  0,    1 },
     },
 }
 

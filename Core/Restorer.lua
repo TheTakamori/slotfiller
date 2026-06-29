@@ -125,7 +125,7 @@ function SlotFiller.Restorer:RestoreSBASlot(actionID, spareSBASlots)
     local cursorType = GetCursorInfo and GetCursorInfo()
     if cursorType and cursorType ~= "" then
         ActionAPI.PlaceSlot(actionID)
-        ClearCursor()  -- discard any old content swapped off the target slot
+        if ClearCursor then ClearCursor() end  -- discard any old content swapped off the target slot
     else
         if ClearCursor then ClearCursor() end
         addError(self, string.format(
@@ -172,7 +172,7 @@ function SlotFiller.Restorer:RestoreSlot(actionID, slot, spellCache, macroBodyCa
         end
         if not picked then
             -- Spell not available for this spec — skip silently rather than error.
-            ClearCursor()
+            if ClearCursor then ClearCursor() end
             return
         end
         ActionAPI.PlaceSlot(actionID)
@@ -183,7 +183,7 @@ function SlotFiller.Restorer:RestoreSlot(actionID, slot, spellCache, macroBodyCa
         local macroID = self:FindMacroID(slot, macroBodyCache, macroNameCache, macroIDCache)
         if not macroID or not ActionAPI.PickupMacroID(macroID) then
             addError(self, string.format("Unable to restore macro %s to slot %d.", slot.name or slot.body or "?", actionID))
-            ClearCursor()
+            if ClearCursor then ClearCursor() end
             return
         end
         ActionAPI.PlaceSlot(actionID)
@@ -193,7 +193,7 @@ function SlotFiller.Restorer:RestoreSlot(actionID, slot, spellCache, macroBodyCa
     if slot.type == Constants.ACTION_TYPE.ITEM then
         if not ActionAPI.PickupItemID(slot.id) then
             addError(self, string.format("Unable to restore item %s to slot %d.", slot.name or tostring(slot.id), actionID))
-            ClearCursor()
+            if ClearCursor then ClearCursor() end
             return
         end
         ActionAPI.PlaceSlot(actionID)
@@ -203,7 +203,7 @@ function SlotFiller.Restorer:RestoreSlot(actionID, slot, spellCache, macroBodyCa
     if slot.type == Constants.ACTION_TYPE.FLYOUT then
         if not ActionAPI.PickupFlyoutID(slot.id) then
             addError(self, string.format("Unable to restore flyout %s to slot %d.", slot.name or tostring(slot.id), actionID))
-            ClearCursor()
+            if ClearCursor then ClearCursor() end
             return
         end
         ActionAPI.PlaceSlot(actionID)
@@ -213,7 +213,7 @@ function SlotFiller.Restorer:RestoreSlot(actionID, slot, spellCache, macroBodyCa
     if slot.type == Constants.ACTION_TYPE.SUMMONMOUNT then
         if not ActionAPI.PickupMountByID(slot.id) then
             addError(self, string.format("Unable to restore mount (id=%s) to slot %d.", tostring(slot.id), actionID))
-            ClearCursor()
+            if ClearCursor then ClearCursor() end
             return
         end
         ActionAPI.PlaceSlot(actionID)
@@ -259,18 +259,18 @@ function SlotFiller.Restorer:RestoreSlot(actionID, slot, spellCache, macroBodyCa
         end
         if not picked then
             addError(self, string.format("Unable to restore companion to slot %d.", actionID))
-            ClearCursor()
+            if ClearCursor then ClearCursor() end
             return
         end
         ActionAPI.PlaceSlot(actionID)
-        ClearCursor()
+        if ClearCursor then ClearCursor() end
         return
     end
 
     if slot.type == Constants.ACTION_TYPE.EQUIPMENTSET then
         if not ActionAPI.PickupEquipmentSetName(slot.id) then
             addError(self, string.format("Unable to restore equipment set %s to slot %d.", tostring(slot.id), actionID))
-            ClearCursor()
+            if ClearCursor then ClearCursor() end
             return
         end
         ActionAPI.PlaceSlot(actionID)

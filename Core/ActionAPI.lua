@@ -227,7 +227,7 @@ function SlotFiller.ActionAPI.PickupEquipmentSetName(setName)
     if not setName then
         return false
     end
-    if C_EquipmentSet and C_EquipmentSet.PickupEquipmentSet then
+    if C_EquipmentSet and C_EquipmentSet.PickupEquipmentSet and C_EquipmentSet.GetNumEquipmentSets then
         for index = 1, C_EquipmentSet.GetNumEquipmentSets() do
             local name = C_EquipmentSet.GetEquipmentSetInfo(index)
             if name == setName then
