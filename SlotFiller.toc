@@ -1,0 +1,27 @@
+## Interface: 120007
+## Title: Slot Filler
+## Notes: Save and swap action bar slot assignments (account-wide profiles) with /sfill.
+## Author: Takamori
+## Version: 1.1.0
+## IconTexture: Interface\AddOns\SlotFiller\Media\Icons\slotfiller-64.png
+## SavedVariables: SlotFillerDB
+
+Core/Constants.lua
+Core/WoWConstants.lua
+Core/Text.lua
+Core/Defaults.lua
+Core/Context.lua
+Core/ActionAPI.lua
+Core/Normalizer.lua
+Core/Scanner.lua
+Core/Restorer.lua
+Core/ProfileIndex.lua
+Core/State.lua
+Core/AutoLoad.lua
+Core/ProfileActions.lua
+Core/Bootstrap.lua
+UI/MinimapButton.lua
+UI/CopyFrame.lua
+UI/MainFrame.lua
+UI/SlashCommands.lua
+UI/DevCommands.lua
