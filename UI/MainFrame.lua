@@ -734,10 +734,6 @@ function MainFrame:ShowPanel()
     end
 end
 
-function MainFrame:HidePanel()
-    if self.frame then self.frame:Hide() end
-end
-
 function MainFrame:Toggle()
     self:Ensure()
     if self.frame:IsShown() then

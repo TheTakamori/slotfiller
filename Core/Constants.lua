@@ -34,6 +34,9 @@ SlotFiller.Constants = {
         UNKNOWN = "unknown",
     },
 
+    -- Sentinel mount-action ID returned by GetActionInfo for "Summon Random Favourite Mount".
+    RANDOM_FAVORITE_MOUNT_ID = 268435455,
+
     ACTION_SUBTYPE = {
         ASSISTEDCOMBAT = "assistedcombat",
     },
@@ -113,16 +116,20 @@ SlotFiller.Constants = {
 }
 
 SlotFiller.Constants.RESERVED_COMMANDS = {
-    [SlotFiller.Constants.COMMAND.SAVE] = true,
-    [SlotFiller.Constants.COMMAND.LOAD] = true,
-    [SlotFiller.Constants.COMMAND.APPLY] = true,
-    [SlotFiller.Constants.COMMAND.USE] = true,
-    [SlotFiller.Constants.COMMAND.LIST] = true,
-    [SlotFiller.Constants.COMMAND.DELETE] = true,
-    [SlotFiller.Constants.COMMAND.RENAME] = true,
+    [SlotFiller.Constants.COMMAND.SAVE]      = true,
+    [SlotFiller.Constants.COMMAND.LOAD]      = true,
+    [SlotFiller.Constants.COMMAND.APPLY]     = true,
+    [SlotFiller.Constants.COMMAND.USE]       = true,
+    [SlotFiller.Constants.COMMAND.LIST]      = true,
+    [SlotFiller.Constants.COMMAND.DELETE]    = true,
+    [SlotFiller.Constants.COMMAND.RENAME]    = true,
     [SlotFiller.Constants.COMMAND.DUPLICATE] = true,
-    [SlotFiller.Constants.COMMAND.HELP] = true,
-    [SlotFiller.Constants.COMMAND.OPEN] = true,
-    [SlotFiller.Constants.COMMAND.MINIMAP] = true,
-    [SlotFiller.Constants.COMMAND.SCAN] = true,
+    [SlotFiller.Constants.COMMAND.HELP]      = true,
+    [SlotFiller.Constants.COMMAND.OPEN]      = true,
+    [SlotFiller.Constants.COMMAND.MINIMAP]   = true,
+    [SlotFiller.Constants.COMMAND.SCAN]      = true,
+    -- Dev-only verbs must also be reserved so a profile named "sba" or "errors"
+    -- is never accidentally shorthand-loaded instead of running the command.
+    [SlotFiller.Constants.COMMAND.SBA]       = true,
+    [SlotFiller.Constants.COMMAND.ERRORS]    = true,
 }

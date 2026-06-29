@@ -51,7 +51,7 @@ function SlotFiller.Scanner:ReadSlot(actionID)
     if not actionType or actionType == "" then
         return nil
     end
-    if actionType == "equipmentset" then
+    if actionType == Constants.ACTION_TYPE.EQUIPMENTSET then
         if id == nil or id == "" then return nil end
     elseif id == nil then
         return nil

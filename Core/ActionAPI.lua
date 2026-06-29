@@ -2,6 +2,7 @@ local _, SlotFiller = ...
 
 SlotFiller.ActionAPI = {}
 
+local Constants = SlotFiller.Constants
 local PLAYER_SPELL_BANK = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
 
 local function isOnCurrentSpecSkillLine(skillLineInfo)
@@ -49,7 +50,7 @@ function SlotFiller.ActionAPI.HasSlotAction(actionID)
     if not actionType or actionType == "" then
         return false
     end
-    if actionType == "equipmentset" then
+    if actionType == Constants.ACTION_TYPE.EQUIPMENTSET then
         return id ~= nil and id ~= ""
     end
     -- Allow id == 0: some special Midnight actions (e.g. Summon Random Favorite Mount)
@@ -249,7 +250,9 @@ function SlotFiller.ActionAPI.BuildFlyoutBookCache()
     return cache
 end
 
-function SlotFiller.ActionAPI.PickupFlyoutID(flyoutID)
+-- flyoutBookCache is optional; when provided (e.g. from ApplyProfile's pre-built cache)
+-- the call to BuildFlyoutBookCache is skipped to avoid redundant spellbook iteration.
+function SlotFiller.ActionAPI.PickupFlyoutID(flyoutID, flyoutBookCache)
     if not flyoutID then
         return false
     end
@@ -274,8 +277,8 @@ function SlotFiller.ActionAPI.PickupFlyoutID(flyoutID)
     -- Newer Midnight flyouts (e.g. Hero's Path portal menus) have flyout IDs that
     -- cannot be resolved via PickupSpell but are accessible as spellbook entries.
     if C_SpellBook and C_SpellBook.PickupSpellBookItem then
-        local flyoutCache = SlotFiller.ActionAPI.BuildFlyoutBookCache()
-        local bookIndex = flyoutCache[flyoutID]
+        local fc = flyoutBookCache or SlotFiller.ActionAPI.BuildFlyoutBookCache()
+        local bookIndex = fc[flyoutID]
         if bookIndex then
             C_SpellBook.PickupSpellBookItem(bookIndex, PLAYER_SPELL_BANK)
             if cursorIsValid() then return true end
@@ -303,8 +306,7 @@ function SlotFiller.ActionAPI.PickupMountByID(mountActionID)
     if not C_MountJournal then return false end
 
     local ok, picked = pcall(function()
-        -- 268435455 (0x0FFFFFFF) = "Summon Random Favourite Mount"
-        if mountActionID == 268435455 then
+        if mountActionID == Constants.RANDOM_FAVORITE_MOUNT_ID then
             if not C_MountJournal.Pickup then return false end
             C_MountJournal.Pickup(0)
             local t = GetCursorInfo and GetCursorInfo()

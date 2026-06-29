@@ -50,6 +50,8 @@ function SlotFiller.ProfileActions:Load(profileName)
     if not ok then
         if result == "combat" then
             SlotFiller.Print(Text.COMBAT_BLOCKED)
+        else
+            SlotFiller.Print(string.format(Text.RESTORE_CORRUPT, profileName))
         end
         return false
     end

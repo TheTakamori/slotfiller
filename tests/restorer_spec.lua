@@ -340,6 +340,127 @@ runner:test("summonpet slot succeeds when pet is in the collection", function()
     support.assert.equal(errCount, 0, "no error when pet found")
 end)
 
+-- ---------------------------------------------------------------------------
+-- SBA preservation (rule d)
+-- ---------------------------------------------------------------------------
+
+runner:test("RestoreSlot preserves an SBA button regardless of profile content", function()
+    -- Stub GetSlotActionInfo so slot 10 reports assistedcombat.
+    -- slotIsAssistedCombat falls back to ActionAPI.GetSlotActionInfo when
+    -- C_ActionBar.IsAssistedCombatAction is absent (as it is in the test host).
+    local originalGetInfo = SlotFiller.ActionAPI.GetSlotActionInfo
+    SlotFiller.ActionAPI.GetSlotActionInfo = function(actionID)
+        if actionID == 10 then
+            return "spell", 12345, "assistedcombat", nil
+        end
+        return nil
+    end
+
+    local cleared = {}
+    local originalClearSlot = SlotFiller.ActionAPI.ClearSlot
+    SlotFiller.ActionAPI.ClearSlot = function(actionID)
+        cleared[actionID] = true
+    end
+
+    -- Profile says slot 10 should hold a normal spell — SBA must not be displaced.
+    local caches = { spell = {}, flyout = {}, macroBody = {}, macroName = {}, macroID = {} }
+    SlotFiller.State:ResetForTests()
+    R:RestoreSlot(10, { type = C.ACTION_TYPE.SPELL, id = 99999, name = "Normal Spell" }, caches)
+
+    SlotFiller.ActionAPI.GetSlotActionInfo = originalGetInfo
+    SlotFiller.ActionAPI.ClearSlot = originalClearSlot
+
+    support.assert.isNil(cleared[10], "SBA slot must not be cleared even when profile wants a different action")
+end)
+
+runner:test("RestoreSlot preserves an SBA button when profile slot is empty", function()
+    local originalGetInfo = SlotFiller.ActionAPI.GetSlotActionInfo
+    SlotFiller.ActionAPI.GetSlotActionInfo = function(actionID)
+        if actionID == 15 then
+            return "spell", 99, "assistedcombat", nil
+        end
+        return nil
+    end
+
+    local cleared = {}
+    local originalClearSlot = SlotFiller.ActionAPI.ClearSlot
+    SlotFiller.ActionAPI.ClearSlot = function(actionID)
+        cleared[actionID] = true
+    end
+
+    local caches = { spell = {}, flyout = {}, macroBody = {}, macroName = {}, macroID = {} }
+    SlotFiller.State:ResetForTests()
+    R:RestoreSlot(15, nil, caches)  -- profile has nothing here
+
+    SlotFiller.ActionAPI.GetSlotActionInfo = originalGetInfo
+    SlotFiller.ActionAPI.ClearSlot = originalClearSlot
+
+    support.assert.isNil(cleared[15], "SBA slot must not be cleared even when profile slot is empty")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Sequential load contamination regression (rule f)
+-- ---------------------------------------------------------------------------
+
+runner:test("loading profile B after profile A never leaves A stale content in empty B slot", function()
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local clearCounts = {}
+    local originalClearSlot = SlotFiller.ActionAPI.ClearSlot
+    SlotFiller.ActionAPI.ClearSlot = function(actionID)
+        clearCounts[actionID] = (clearCounts[actionID] or 0) + 1
+    end
+
+    local originalPickup = SlotFiller.ActionAPI.PickupItemID
+    SlotFiller.ActionAPI.PickupItemID = function() return false end
+
+    -- Profile A: slot 5 has an item that will fail to restore.
+    local profileA = { slots = {
+        [5] = { type = C.ACTION_TYPE.ITEM, id = 99999, name = "Profile A Item" },
+    }}
+    R:ApplyProfile(profileA)
+
+    -- Profile B: slot 5 intentionally absent (empty bar slot).
+    local profileB = { slots = {} }
+    R:ApplyProfile(profileB)
+
+    SlotFiller.ActionAPI.ClearSlot    = originalClearSlot
+    SlotFiller.ActionAPI.PickupItemID = originalPickup
+
+    -- Slot 5 must be cleared in profile A's load (pre-clear before failed pickup)
+    -- AND in profile B's load (empty sweep of all non-SBA slots).
+    support.assert.isTrue(
+        (clearCounts[5] or 0) >= 2,
+        "slot 5 swept in both profile A and profile B loads; stale A content cannot survive")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Unknown action type (rule h)
+-- ---------------------------------------------------------------------------
+
+runner:test("ApplyProfile logs a detailed error for UNKNOWN action type", function()
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local profile = {
+        slots = {
+            [20] = {
+                type    = C.ACTION_TYPE.UNKNOWN,
+                rawType = "futurenewtype",
+                id      = 42,
+            },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+
+    support.assert.equal(ok, true, "apply returns true")
+    support.assert.equal(errCount, 1, "one error for unknown type")
+    local errText = R:GetLastErrorsText()
+    support.assert.isTrue(errText:find("futurenewtype") ~= nil, "error names the raw type")
+    support.assert.isTrue(errText:find("slot 20") ~= nil, "error names the slot")
+end)
+
 runner:test("summonpet slot records an error when pet is not in the collection", function()
     _G.C_PetJournal = { PickupPet = function() end }  -- pickup does nothing; cursor stays nil
     _G.GetCursorInfo = function() return nil end

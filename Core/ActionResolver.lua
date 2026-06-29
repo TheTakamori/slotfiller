@@ -74,8 +74,8 @@ local function pickupMacro(slot, actionID, caches)
     return true, nil
 end
 
-local function pickupFlyout(slot, actionID)
-    if not ActionAPI.PickupFlyoutID(slot.id) then
+local function pickupFlyout(slot, actionID, flyoutCache)
+    if not ActionAPI.PickupFlyoutID(slot.id, flyoutCache) then
         return false, string.format(
             "Unable to restore flyout %s to slot %d.",
             slot.name or tostring(slot.id), actionID)
@@ -101,20 +101,24 @@ local function pickupBattlePet(slot, actionID)
     return true, nil
 end
 
-local function pickupCompanion(slot, actionID)
-    local picked = false
-    -- Legacy PickupCompanion (still present in Midnight for non-mount pet companions).
-    if PickupCompanion and slot.subType then
-        pcall(PickupCompanion, slot.subType, slot.id)
+-- Shared helper used by both pickupCompanion and pickupUnknown.
+local function tryPickupCompanion(subType, id)
+    if PickupCompanion and subType then
+        pcall(PickupCompanion, subType, id)
         local ct = GetCursorInfo and GetCursorInfo()
-        picked = ct == "companion" or ct == "mount"
+        if ct == "companion" or ct == "mount" then
+            return true
+        end
     end
     -- Fallback: most Midnight companion mounts surface through the mount journal.
-    if not picked and slot.id then
-        picked = ActionAPI.PickupMountBySpellID(slot.id)
-    end
-    if not picked then
-        return false, string.format("Unable to restore companion to slot %d.", actionID)
+    return id ~= nil and ActionAPI.PickupMountBySpellID(id)
+end
+
+local function pickupCompanion(slot, actionID)
+    if not tryPickupCompanion(slot.subType, slot.id) then
+        return false, string.format(
+            "Unable to restore companion (id=%s, sub=%s) to slot %d.",
+            tostring(slot.id), tostring(slot.subType), actionID)
     end
     return true, nil
 end
@@ -133,14 +137,7 @@ local function pickupUnknown(slot, actionID)
     local picked = false
     -- Attempt common raw types that may arrive here from future WoW patches.
     if rawType == "companion" then
-        if PickupCompanion and slot.subType then
-            pcall(PickupCompanion, slot.subType, slot.id)
-            local ct = GetCursorInfo and GetCursorInfo()
-            picked = ct ~= nil and ct ~= ""
-        end
-        if not picked and slot.id then
-            picked = ActionAPI.PickupMountBySpellID(slot.id)
-        end
+        picked = tryPickupCompanion(slot.subType, slot.id)
     elseif rawType == "summonmount" then
         picked = ActionAPI.PickupMountByID(slot.id)
     end
@@ -179,7 +176,7 @@ function SlotFiller.ActionResolver.PickupToCursor(slot, actionID, caches)
     elseif t == Constants.ACTION_TYPE.MACRO then
         return pickupMacro(slot, actionID, caches)
     elseif t == Constants.ACTION_TYPE.FLYOUT then
-        return pickupFlyout(slot, actionID)
+        return pickupFlyout(slot, actionID, caches.flyout)
     elseif t == Constants.ACTION_TYPE.SUMMONMOUNT then
         return pickupMount(slot, actionID)
     elseif t == Constants.ACTION_TYPE.SUMMONPET then
@@ -193,6 +190,6 @@ function SlotFiller.ActionResolver.PickupToCursor(slot, actionID, caches)
     end
 
     return false, string.format(
-        "Cannot restore unrecognised action type '%s' in slot %d.",
+        "Cannot restore unrecognised action type '%s' in slot %d. Use /sfill scan for details.",
         tostring(t), actionID)
 end
