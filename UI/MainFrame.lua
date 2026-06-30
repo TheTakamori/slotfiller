@@ -4,6 +4,7 @@ local Constants = SlotFiller.Constants
 local Text = SlotFiller.Text
 local Colors = Constants.COLORS
 local Frame = Constants.FRAME
+local Strings = SlotFiller.Strings
 
 SlotFiller.UI = SlotFiller.UI or {}
 SlotFiller.UI.MainFrame = {}
@@ -45,10 +46,6 @@ local function createButton(parent, text, width)
     return button
 end
 
-local function trim(text)
-    return (text or ""):match("^%s*(.-)%s*$") or ""
-end
-
 local function getStaticPopupEditBox(dialog)
     if not dialog then return nil end
     return dialog.EditBox or dialog.editBox
@@ -57,7 +54,7 @@ end
 local function getStaticPopupEditText(dialog)
     local editBox = getStaticPopupEditBox(dialog)
     if not editBox then return "" end
-    return trim(editBox:GetText())
+    return Strings.Trim(editBox:GetText())
 end
 
 -- Returns a comma-separated summary of the keys in a selection set, or
@@ -77,20 +74,18 @@ local function getEligibleClasses()
     if next(selectedChars) == nil then
         return SlotFiller.Context.GetAllClasses()
     end
-    local known   = SlotFiller.State:GetKnownCharacters()
-    local seen    = {}
-    local result  = {}
+    local allClasses = SlotFiller.Context.GetAllClasses()
+    local classByFile = {}
+    for _, ci in ipairs(allClasses) do classByFile[ci.file] = ci end
+
+    local known  = SlotFiller.State:GetKnownCharacters()
+    local seen   = {}
+    local result = {}
     for _, info in ipairs(known) do
         if selectedChars[info.key] and not seen[info.file] then
-            seen[info.file]  = true
-            -- Find the localized class name from all-classes lookup
-            local allClasses = SlotFiller.Context.GetAllClasses()
-            for _, ci in ipairs(allClasses) do
-                if ci.file == info.file then
-                    result[#result + 1] = ci
-                    break
-                end
-            end
+            seen[info.file] = true
+            local ci = classByFile[info.file]
+            if ci then result[#result + 1] = ci end
         end
     end
     table.sort(result, function(a, b) return a.name < b.name end)
@@ -349,7 +344,7 @@ end
 function MainFrame:UpdateSavePlaceholder()
     local frame = self.frame
     if not frame or not frame.saveBox or not frame.savePlaceholder then return end
-    local hasText  = trim(frame.saveBox:GetText()) ~= ""
+    local hasText  = Strings.Trim(frame.saveBox:GetText()) ~= ""
     local hasFocus = frame.saveBox:HasFocus()
     frame.savePlaceholder:SetShown(not hasText and not hasFocus)
 end
@@ -368,7 +363,7 @@ end
 function MainFrame:GetSaveProfileName()
     local saveBox = self.frame and self.frame.saveBox
     if not saveBox then return "" end
-    return trim(saveBox:GetText())
+    return Strings.Trim(saveBox:GetText())
 end
 
 function MainFrame:SetupSaveBox(saveBox)
@@ -570,7 +565,7 @@ function MainFrame:Ensure()
             EditBoxOnEnterPressed = function(editBox)
                 local dialog  = editBox:GetParent()
                 local oldName = (dialog and dialog.data) or profileName
-                local newName = trim(editBox:GetText())
+                local newName = Strings.Trim(editBox:GetText())
                 if SlotFiller.Context.RequireReady()
                     and SlotFiller.ProfileActions:Rename(oldName, newName) then
                     selectedProfile = newName
@@ -604,7 +599,7 @@ function MainFrame:Ensure()
             EditBoxOnEnterPressed = function(editBox)
                 local dialog     = editBox:GetParent()
                 local sourceName = (dialog and dialog.data) or profileName
-                local newName    = trim(editBox:GetText())
+                local newName    = Strings.Trim(editBox:GetText())
                 if SlotFiller.Context.RequireReady()
                     and SlotFiller.ProfileActions:Duplicate(sourceName, newName) then
                     selectedProfile = newName
@@ -673,7 +668,7 @@ function MainFrame:Refresh()
     local frame = self:Ensure()
     if not SlotFiller.Context.RequireReady() then return end
 
-    local indexModel = SlotFiller.ProfileIndex:Build()
+    local indexModel = SlotFiller.ProfileIndex.Build()
 
     -- Build "Name-Realm · Class · Spec" info line.
     local specParts = {}

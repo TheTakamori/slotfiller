@@ -485,4 +485,300 @@ runner:test("summonpet slot records an error when pet is not in the collection",
         "error mentions slot 48")
 end)
 
+-- ---------------------------------------------------------------------------
+-- Character-specific macro recreation
+-- ---------------------------------------------------------------------------
+
+-- Helper: install a macro environment where no macros pre-exist and
+-- CreateMacro will succeed, returning newID and capturing call arguments.
+local function setup_char_macro_env(newID, numUsed)
+    numUsed = numUsed or 0
+    _G.MAX_ACCOUNT_MACROS  = 120
+    _G.MAX_CHARACTER_MACROS = 18
+    _G.GetMacroInfo = function() return nil end
+    _G.GetNumMacros = function() return 0, numUsed end
+
+    local captured = {}
+    _G.CreateMacro = function(name, icon, body, perChar)
+        captured.name    = name
+        captured.icon    = icon
+        captured.body    = body
+        captured.perChar = perChar
+        return newID
+    end
+
+    local pickedUp = nil
+    _G.PickupMacro   = function(id) pickedUp = id end
+    _G.GetCursorInfo = function() return pickedUp and "macro" or nil end
+
+    return captured, function() return pickedUp end
+end
+
+local function teardown_char_macro_env()
+    _G.MAX_ACCOUNT_MACROS   = nil
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.GetMacroInfo         = nil
+    _G.GetNumMacros         = nil
+    _G.CreateMacro          = nil
+    _G.PickupMacro          = nil
+    _G.GetCursorInfo        = nil
+end
+
+runner:test("perCharacter macro not found on this character is created and placed", function()
+    local captured, pickedUpFn = setup_char_macro_env(121, 0)
+
+    local profile = {
+        slots = {
+            [4] = {
+                type         = C.ACTION_TYPE.MACRO,
+                macroID      = 121,
+                name         = "MyMacro",
+                body         = SlotFiller.Normalizer.CompressMacroText("/cast Fireball"),
+                icon         = 134414,
+                perCharacter = true,
+            },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+    teardown_char_macro_env()
+
+    support.assert.equal(ok, true, "apply succeeds")
+    support.assert.equal(errCount, 0, "no error when macro is recreated")
+    support.assert.equal(captured.name,    "MyMacro", "correct name passed to CreateMacro")
+    support.assert.equal(captured.icon,    134414,    "correct icon passed to CreateMacro")
+    support.assert.equal(captured.perChar, true,      "created as character-specific")
+    support.assert.equal(pickedUpFn(),     121,       "newly created macro was picked up")
+end)
+
+runner:test("perCharacter macro body is uncompressed before passing to CreateMacro", function()
+    local captured, _ = setup_char_macro_env(121, 0)
+
+    local compressed = SlotFiller.Normalizer.CompressMacroText("/cast Fire\n/say Hello")
+    local profile = {
+        slots = {
+            [1] = {
+                type         = C.ACTION_TYPE.MACRO,
+                macroID      = 125,
+                name         = "TwoLine",
+                body         = compressed,
+                perCharacter = true,
+            },
+        },
+    }
+    R:ApplyProfile(profile)
+    teardown_char_macro_env()
+
+    support.assert.equal(captured.body, "/cast Fire\n/say Hello",
+        "body is uncompressed before passing to CreateMacro")
+end)
+
+runner:test("perCharacter macro uses fallback icon when profile has no icon", function()
+    local captured, _ = setup_char_macro_env(121, 0)
+
+    local profile = {
+        slots = {
+            [2] = {
+                type         = C.ACTION_TYPE.MACRO,
+                macroID      = 122,
+                name         = "NoIcon",
+                body         = SlotFiller.Normalizer.CompressMacroText("/cast Ice"),
+                -- icon intentionally absent
+                perCharacter = true,
+            },
+        },
+    }
+    R:ApplyProfile(profile)
+    teardown_char_macro_env()
+
+    support.assert.equal(captured.icon, "INV_MISC_QUESTIONMARK",
+        "fallback icon used when slot has no icon")
+end)
+
+runner:test("perCharacter macro creation is skipped when character is at the limit", function()
+    local createCalled = false
+    _G.MAX_ACCOUNT_MACROS   = 120
+    _G.MAX_CHARACTER_MACROS = 18
+    _G.GetMacroInfo         = function() return nil end
+    _G.GetNumMacros         = function() return 0, 18 end  -- all 18 slots used
+    _G.CreateMacro          = function() createCalled = true return 130 end
+
+    local profile = {
+        slots = {
+            [4] = {
+                type         = C.ACTION_TYPE.MACRO,
+                macroID      = 125,
+                name         = "OverLimit",
+                body         = SlotFiller.Normalizer.CompressMacroText("/cast Frostbolt"),
+                perCharacter = true,
+            },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+
+    _G.MAX_ACCOUNT_MACROS   = nil
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.GetMacroInfo         = nil
+    _G.GetNumMacros         = nil
+    _G.CreateMacro          = nil
+
+    support.assert.equal(ok, true, "apply returns true even when limit is full")
+    support.assert.equal(errCount, 1, "one error recorded for limit-blocked creation")
+    support.assert.isFalse(createCalled, "CreateMacro must not be called when limit is full")
+    support.assert.isTrue(
+        R:GetLastErrorsText():find("limit") ~= nil,
+        "error message mentions the limit")
+    support.assert.isTrue(
+        R:GetLastErrorsText():find("slot 4") ~= nil,
+        "error message mentions the slot")
+end)
+
+runner:test("same perCharacter macro on two slots: created once, not twice", function()
+    local createCount = 0
+    _G.MAX_ACCOUNT_MACROS   = 120
+    _G.MAX_CHARACTER_MACROS = 18
+    _G.GetMacroInfo         = function() return nil end
+    _G.GetNumMacros         = function() return 0, 0 end
+    _G.CreateMacro          = function()
+        createCount = createCount + 1
+        return 121
+    end
+    _G.PickupMacro   = function(id) _G._pickedMacro = id end
+    _G.GetCursorInfo = function() return _G._pickedMacro and "macro" or nil end
+
+    local compressed = SlotFiller.Normalizer.CompressMacroText("/cast Fireball")
+    local profile = {
+        slots = {
+            [4] = { type = C.ACTION_TYPE.MACRO, macroID = 125, name = "Multi",
+                    body = compressed, perCharacter = true },
+            [8] = { type = C.ACTION_TYPE.MACRO, macroID = 125, name = "Multi",
+                    body = compressed, perCharacter = true },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+
+    _G.MAX_ACCOUNT_MACROS   = nil
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.GetMacroInfo         = nil
+    _G.GetNumMacros         = nil
+    _G.CreateMacro          = nil
+    _G.PickupMacro          = nil
+    _G.GetCursorInfo        = nil
+    _G._pickedMacro         = nil
+
+    support.assert.equal(ok, true, "apply succeeds")
+    support.assert.equal(errCount, 0, "no errors for either slot")
+    support.assert.equal(createCount, 1, "CreateMacro called exactly once even though macro appears on two slots")
+end)
+
+runner:test("global macro missing from this character reports an error without attempting creation", function()
+    local createCalled = false
+    _G.MAX_ACCOUNT_MACROS   = 120
+    _G.MAX_CHARACTER_MACROS = 0
+    _G.GetMacroInfo         = function() return nil end
+    _G.GetNumMacros         = function() return 0, 0 end
+    _G.CreateMacro          = function() createCalled = true return 5 end
+
+    local profile = {
+        slots = {
+            [7] = {
+                type    = C.ACTION_TYPE.MACRO,
+                macroID = 5,
+                name    = "GlobalGone",
+                body    = SlotFiller.Normalizer.CompressMacroText("/cast Fire"),
+                -- perCharacter is absent → global macro
+            },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+
+    _G.MAX_ACCOUNT_MACROS   = nil
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.GetMacroInfo         = nil
+    _G.GetNumMacros         = nil
+    _G.CreateMacro          = nil
+
+    support.assert.equal(ok, true, "apply returns true")
+    support.assert.equal(errCount, 1, "one error for missing global macro")
+    support.assert.isFalse(createCalled, "CreateMacro must not be called for global macros")
+end)
+
+runner:test("perCharacter macro with no name skips creation and records an error", function()
+    local createCalled = false
+    _G.MAX_ACCOUNT_MACROS   = 120
+    _G.MAX_CHARACTER_MACROS = 18
+    _G.GetMacroInfo         = function() return nil end
+    _G.GetNumMacros         = function() return 0, 0 end
+    _G.CreateMacro          = function() createCalled = true return 121 end
+
+    local profile = {
+        slots = {
+            [9] = {
+                type         = C.ACTION_TYPE.MACRO,
+                macroID      = 130,
+                -- name intentionally absent
+                body         = SlotFiller.Normalizer.CompressMacroText("/cast X"),
+                perCharacter = true,
+            },
+        },
+    }
+    local ok, errCount = R:ApplyProfile(profile)
+
+    _G.MAX_ACCOUNT_MACROS   = nil
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.GetMacroInfo         = nil
+    _G.GetNumMacros         = nil
+    _G.CreateMacro          = nil
+
+    support.assert.equal(ok, true, "apply returns true")
+    support.assert.equal(errCount, 1, "one error when name is absent")
+    support.assert.isFalse(createCalled,
+        "CreateMacro must not be called when slot has no name")
+end)
+
+runner:test("ActionAPI.CreateCharacterMacro returns limit reason when at capacity", function()
+    _G.MAX_CHARACTER_MACROS = 18
+    _G.GetNumMacros = function() return 0, 18 end
+    _G.CreateMacro  = function() return 121 end
+
+    local id, reason = SlotFiller.ActionAPI.CreateCharacterMacro("X", nil, "")
+
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.GetNumMacros = nil
+    _G.CreateMacro  = nil
+
+    support.assert.isNil(id,              "no id returned when at limit")
+    support.assert.equal(reason, "limit", "reason is 'limit'")
+end)
+
+runner:test("ActionAPI.CreateCharacterMacro returns unavailable when API missing", function()
+    -- Ensure CreateMacro is absent
+    local saved = _G.CreateMacro
+    _G.CreateMacro  = nil
+    _G.GetNumMacros = nil
+
+    local id, reason = SlotFiller.ActionAPI.CreateCharacterMacro("X", nil, "")
+
+    _G.CreateMacro  = saved
+
+    support.assert.isNil(id,                   "no id without API")
+    support.assert.equal(reason, "unavailable", "reason is 'unavailable'")
+end)
+
+runner:test("ActionAPI.CreateCharacterMacro returns new macroID on success", function()
+    _G.MAX_CHARACTER_MACROS = 18
+    _G.GetNumMacros = function() return 0, 0 end
+    _G.CreateMacro  = function(name, icon, body, perChar)
+        return 121
+    end
+
+    local id, reason = SlotFiller.ActionAPI.CreateCharacterMacro("Test", 134414, "/cast Fire")
+
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.GetNumMacros = nil
+    _G.CreateMacro  = nil
+
+    support.assert.equal(id,     121, "macroID returned on success")
+    support.assert.isNil(reason,      "no error reason on success")
+end)
+
 os.exit(runner:run())

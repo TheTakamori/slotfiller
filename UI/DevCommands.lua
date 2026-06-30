@@ -1,6 +1,7 @@
 local _, SlotFiller = ...
 
 local Constants = SlotFiller.Constants
+local PLAYER_SPELL_BANK = SlotFiller.ActionAPI.PLAYER_SPELL_BANK
 
 -- Wrap the production slash handler to intercept dev-only commands.
 -- This file is excluded from release builds; in production the commands
@@ -69,7 +70,7 @@ function SlotFiller.UI.SlashCommands:Handle(message)
                     local offset = info.itemIndexOffset or 0
                     for i = 1, (info.numSpellBookItems or 0) do
                         local bookIndex = offset + i
-                        local itemInfo  = C_SpellBook.GetSpellBookItemInfo(bookIndex, 0)
+                        local itemInfo  = C_SpellBook.GetSpellBookItemInfo(bookIndex, PLAYER_SPELL_BANK)
                         if itemInfo then
                             local t = type(itemInfo.itemType) == "string"
                                 and string.lower(itemInfo.itemType) or tostring(itemInfo.itemType)
@@ -80,7 +81,7 @@ function SlotFiller.UI.SlashCommands:Handle(message)
                                     "Found SBA in spellbook: tab=%d bookIdx=%d name=%s itemType=%s",
                                     tabIndex, bookIndex,
                                     tostring(itemInfo.name), tostring(itemInfo.itemType))
-                                C_SpellBook.PickupSpellBookItem(bookIndex, 0)
+                                C_SpellBook.PickupSpellBookItem(bookIndex, PLAYER_SPELL_BANK)
                                 local ct = GetCursorInfo and GetCursorInfo()
                                 lines[#lines+1] = "  After PickupSpellBookItem cursor: " .. tostring(ct)
                                 if ClearCursor then ClearCursor() end

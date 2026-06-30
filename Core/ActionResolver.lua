@@ -2,6 +2,7 @@ local _, SlotFiller = ...
 
 local Constants = SlotFiller.Constants
 local ActionAPI = SlotFiller.ActionAPI
+local Text = SlotFiller.Text
 
 SlotFiller.ActionResolver = {}
 
@@ -54,8 +55,7 @@ end
 
 local function pickupItem(slot, actionID)
     if not ActionAPI.PickupItemID(slot.id) then
-        return false, string.format(
-            "Unable to restore item %s to slot %d.",
+        return false, string.format(Text.RESTORE_ITEM_FAILED,
             slot.name or tostring(slot.id), actionID)
     end
     return true, nil
@@ -66,18 +66,50 @@ local function pickupMacro(slot, actionID, caches)
     -- reference is safe because this function is called at runtime, not load time.
     local macroID = SlotFiller.Restorer:FindMacroID(
         slot, caches.macroBody, caches.macroName, caches.macroID)
-    if not macroID or not ActionAPI.PickupMacroID(macroID) then
-        return false, string.format(
-            "Unable to restore macro %s to slot %d.",
+
+    if macroID then
+        if ActionAPI.PickupMacroID(macroID) then
+            return true, nil
+        end
+        -- Macro found in cache but pickup itself failed — treat as unrestorable.
+        return false, string.format(Text.RESTORE_MACRO_FAILED,
             slot.name or slot.body or "?", actionID)
     end
-    return true, nil
+
+    -- Macro not present on this character. For character-specific macros we know
+    -- the full definition (name, icon, body), so we can recreate it automatically.
+    if slot.perCharacter and slot.name then
+        local body = slot.body
+            and SlotFiller.Normalizer.UncompressMacroText(slot.body)
+            or ""
+        local newID, createErr = ActionAPI.CreateCharacterMacro(
+            slot.name, slot.icon, body)
+        if newID and ActionAPI.PickupMacroID(newID) then
+            -- Update the session caches so later slots referencing this same macro
+            -- find it via FindMacroID instead of attempting a duplicate creation.
+            caches.macroID[newID] = newID
+            if slot.body  then caches.macroBody[slot.body]   = newID end
+            if slot.name  then caches.macroName[slot.name]   = newID end
+            return true, nil
+        end
+        if createErr == "limit" then
+            return false, string.format(
+                SlotFiller.Text.RESTORE_MACRO_LIMIT,
+                slot.name, actionID)
+        end
+        return false, string.format(
+            SlotFiller.Text.RESTORE_MACRO_CREATE_FAILED,
+            slot.name, actionID)
+    end
+
+    -- Global macro missing or no name available for recreation.
+    return false, string.format(Text.RESTORE_MACRO_FAILED,
+        slot.name or slot.body or "?", actionID)
 end
 
 local function pickupFlyout(slot, actionID, flyoutCache)
     if not ActionAPI.PickupFlyoutID(slot.id, flyoutCache) then
-        return false, string.format(
-            "Unable to restore flyout %s to slot %d.",
+        return false, string.format(Text.RESTORE_FLYOUT_FAILED,
             slot.name or tostring(slot.id), actionID)
     end
     return true, nil
@@ -85,8 +117,7 @@ end
 
 local function pickupMount(slot, actionID)
     if not ActionAPI.PickupMountByID(slot.id) then
-        return false, string.format(
-            "Unable to restore mount (id=%s) to slot %d.",
+        return false, string.format(Text.RESTORE_MOUNT_FAILED,
             tostring(slot.id), actionID)
     end
     return true, nil
@@ -94,8 +125,7 @@ end
 
 local function pickupBattlePet(slot, actionID)
     if not ActionAPI.PickupBattlePet(slot.id) then
-        return false, string.format(
-            "Unable to restore battle pet %s to slot %d. The pet may not be in your collection.",
+        return false, string.format(Text.RESTORE_PET_FAILED,
             slot.name or tostring(slot.id), actionID)
     end
     return true, nil
@@ -116,8 +146,7 @@ end
 
 local function pickupCompanion(slot, actionID)
     if not tryPickupCompanion(slot.subType, slot.id) then
-        return false, string.format(
-            "Unable to restore companion (id=%s, sub=%s) to slot %d.",
+        return false, string.format(Text.RESTORE_COMPANION_FAILED,
             tostring(slot.id), tostring(slot.subType), actionID)
     end
     return true, nil
@@ -125,8 +154,7 @@ end
 
 local function pickupEquipmentSet(slot, actionID)
     if not ActionAPI.PickupEquipmentSetName(slot.id) then
-        return false, string.format(
-            "Unable to restore equipment set %s to slot %d.",
+        return false, string.format(Text.RESTORE_EQUIPSET_FAILED,
             tostring(slot.id), actionID)
     end
     return true, nil
@@ -142,8 +170,7 @@ local function pickupUnknown(slot, actionID)
         picked = ActionAPI.PickupMountByID(slot.id)
     end
     if not picked then
-        return false, string.format(
-            "Cannot restore action type '%s' in slot %d. Use /sfill scan for details.",
+        return false, string.format(Text.RESTORE_UNKNOWN_TYPE,
             tostring(rawType), actionID)
     end
     return true, nil
@@ -189,7 +216,6 @@ function SlotFiller.ActionResolver.PickupToCursor(slot, actionID, caches)
         return pickupUnknown(slot, actionID)
     end
 
-    return false, string.format(
-        "Cannot restore unrecognised action type '%s' in slot %d. Use /sfill scan for details.",
+    return false, string.format(Text.RESTORE_UNKNOWN_TYPE,
         tostring(t), actionID)
 end

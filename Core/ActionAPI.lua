@@ -4,6 +4,9 @@ SlotFiller.ActionAPI = {}
 
 local Constants = SlotFiller.Constants
 local PLAYER_SPELL_BANK = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player) or 0
+-- Exposed so other modules (e.g. dev-only diagnostics) never need to
+-- hardcode the player spellbook bank literal themselves.
+SlotFiller.ActionAPI.PLAYER_SPELL_BANK = PLAYER_SPELL_BANK
 
 local function isOnCurrentSpecSkillLine(skillLineInfo)
     if not skillLineInfo then
@@ -201,6 +204,38 @@ function SlotFiller.ActionAPI.PickupMacroID(macroID)
     end
     PickupMacro(macroID)
     return GetCursorInfo and GetCursorInfo() == "macro"
+end
+
+-- Attempts to create a new character-specific macro out of combat.
+-- Must only be called when the player is not in combat (CreateMacro is protected).
+--
+-- Returns macroID on success.
+-- Returns (nil, reason) on failure, where reason is one of:
+--   "unavailable" - CreateMacro or GetNumMacros API missing (non-retail build)
+--   "limit"       - the 18 per-character macro limit is already full
+--   "failed"      - CreateMacro call itself threw an error
+function SlotFiller.ActionAPI.CreateCharacterMacro(name, icon, body)
+    if not CreateMacro or not GetNumMacros then
+        return nil, "unavailable"
+    end
+
+    local _, perChar = GetNumMacros()
+    local limit = MAX_CHARACTER_MACROS or 18
+    if perChar >= limit then
+        return nil, "limit"
+    end
+
+    local ok, result = pcall(CreateMacro,
+        name or "Macro",
+        icon or "INV_MISC_QUESTIONMARK",
+        body or "",
+        true)
+
+    if not ok or not result then
+        return nil, "failed"
+    end
+
+    return result, nil
 end
 
 function SlotFiller.ActionAPI.PickupItemID(itemID)
@@ -418,7 +453,7 @@ function SlotFiller.ActionAPI.IterateSpellBookEntries(callback)
                 local bookIndex = offset + spellIndex
                 local spellName, spellSubName = GetSpellBookItemName(bookIndex, "spell")
                 if spellName then
-                    callback(bookIndex, spellName, spellSubName, nil, nil)
+                    callback(bookIndex, spellName, spellSubName, nil)
                 end
             end
         end

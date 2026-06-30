@@ -156,6 +156,23 @@ runner:test("GetProfileAutoLoad returns empty tables for unknown profile", funct
     support.assert.same(al.specs,      {})
 end)
 
+runner:test("GetProfileAutoLoad default tables are independent across calls", function()
+    SlotFiller.State:ResetForTests()
+    local first  = SlotFiller.State:GetProfileAutoLoad("Ghost")
+    local second = SlotFiller.State:GetProfileAutoLoad("AlsoGhost")
+    first.characters[#first.characters + 1] = "Mutated"
+    support.assert.same(second.characters, {}, "mutating one default does not affect another call's result")
+end)
+
+runner:test("GetProfileAutoLoad default tables are independent for a profile with no autoLoad table", function()
+    SlotFiller.State:ResetForTests()
+    SlotFiller.State:SetProfile("NoAutoLoad", { savedAt = 1, slots = {} })
+    local first  = SlotFiller.State:GetProfileAutoLoad("NoAutoLoad")
+    local second = SlotFiller.State:GetProfileAutoLoad("NoAutoLoad")
+    first.classes[#first.classes + 1] = "PALADIN"
+    support.assert.same(second.classes, {}, "separate calls never share the same default table")
+end)
+
 runner:test("SetProfileAutoLoad and GetProfileAutoLoad roundtrip", function()
     SlotFiller.State:ResetForTests()
     SlotFiller.State:SetProfile("MyProfile", { savedAt = 1, slots = {} })

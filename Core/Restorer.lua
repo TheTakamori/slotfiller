@@ -111,14 +111,12 @@ function SlotFiller.Restorer:RestoreSBASlot(actionID, spareSBASlots)
     end
 
     if not sourceSlot then
-        addError(self, string.format(
-            "Cannot restore Assisted Combat button to slot %d. No Rotation Assistant button was found on your action bars — drag one from the spellbook to any bar, then reload the profile.",
-            actionID))
+        addError(self, string.format(Text.RESTORE_SBA_NO_SOURCE, actionID))
         return
     end
 
     if not PickupAction then
-        addError(self, string.format("Cannot restore Assisted Combat button to slot %d. PickupAction unavailable.", actionID))
+        addError(self, string.format(Text.RESTORE_SBA_API_MISSING, actionID))
         return
     end
 
@@ -129,9 +127,7 @@ function SlotFiller.Restorer:RestoreSBASlot(actionID, spareSBASlots)
         if ClearCursor then ClearCursor() end  -- discard any old content swapped off the target slot
     else
         if ClearCursor then ClearCursor() end
-        addError(self, string.format(
-            "Cannot restore Assisted Combat button to slot %d. Pickup from source slot %d failed.",
-            actionID, sourceSlot))
+        addError(self, string.format(Text.RESTORE_SBA_PICKUP_FAILED, actionID, sourceSlot))
     end
 end
 

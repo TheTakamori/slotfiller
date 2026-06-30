@@ -5,6 +5,13 @@ local Defaults = SlotFiller.Defaults
 
 SlotFiller.State = {}
 
+-- Catch-all auto-load config returned when a profile has no autoLoad table
+-- yet (new profile) or doesn't exist at all. A fresh table is built on every
+-- call so callers can freely mutate the returned arrays.
+local function defaultAutoLoad()
+    return { enabled = false, characters = {}, classes = {}, specs = {} }
+end
+
 local function copyDefaults(defaults, target)
     target = target or {}
     for key, value in pairs(defaults) do
@@ -55,9 +62,9 @@ end
 
 function SlotFiller.State:GetProfileAutoLoad(profileName)
     local profile = self:GetProfile(profileName)
-    if not profile then return { enabled = false, characters = {}, classes = {}, specs = {} } end
+    if not profile then return defaultAutoLoad() end
     local al = profile.autoLoad
-    if not al then return { enabled = false, characters = {}, classes = {}, specs = {} } end
+    if not al then return defaultAutoLoad() end
     return {
         enabled    = al.enabled == true,
         characters = al.characters or {},

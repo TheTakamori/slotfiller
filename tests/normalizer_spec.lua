@@ -47,13 +47,14 @@ runner:test("FromRaw normalises all action types", function()
     support.assert.equal(spell.name, "Fireball", "spell name")
     support.assert.equal(spell.subType, "spell", "spell subType")
 
-    -- macro
+    -- global macro (no icon, no perCharacter)
     local macro = N.FromRaw({ type = "macro", id = 5, actionID = 3, name = "Go", body = "/cast Fire\n/cast Ice" })
     support.assert.equal(macro.type,     "macro",           "macro type")
     support.assert.equal(macro.macroID,  5,                 "macro id stored as macroID")
     support.assert.equal(macro.actionID, 3,                 "macro actionID")
     support.assert.equal(macro.name,     "Go",              "macro name")
     support.assert.equal(macro.body,     "/cast Fire/n/cast Ice", "macro body compressed")
+    support.assert.isNil(macro.perCharacter,               "perCharacter absent for global macro")
 
     -- item
     local item = N.FromRaw({ type = "item", id = 208704, name = "Hearthstone" })
@@ -159,6 +160,38 @@ runner:test("CloneProfile without autoLoad produces copy with no autoLoad field"
     local original = { savedAt = 2, slots = {} }
     local copy = N.CloneProfile(original)
     support.assert.isNil(copy.autoLoad, "no autoLoad when source has none")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Macro slot icon and perCharacter persistence
+-- ---------------------------------------------------------------------------
+
+runner:test("FromRaw stores icon and perCharacter for a character-specific macro", function()
+    local slot = N.FromRaw({
+        type = "macro", id = 125, actionID = 10,
+        name = "MyMacro", body = "/cast Fireball",
+        icon = 134414, perCharacter = true,
+    })
+    support.assert.equal(slot.icon,         134414, "icon stored")
+    support.assert.equal(slot.perCharacter, true,   "perCharacter stored")
+end)
+
+runner:test("FromRaw omits perCharacter for a global macro", function()
+    local slot = N.FromRaw({
+        type = "macro", id = 5, actionID = 1,
+        name = "Global", body = "/cast Ice",
+        icon = 134414, perCharacter = false,
+    })
+    support.assert.equal(slot.icon, 134414, "icon still stored for global macro")
+    support.assert.isNil(slot.perCharacter, "perCharacter not set for global macro")
+end)
+
+runner:test("FromRaw stores nil icon when scanner provides none", function()
+    local slot = N.FromRaw({
+        type = "macro", id = 3, actionID = 1,
+        name = "NoIcon", body = "/cast Fire",
+    })
+    support.assert.isNil(slot.icon, "icon is nil when raw.icon absent")
 end)
 
 os.exit(runner:run())

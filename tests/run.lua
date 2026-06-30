@@ -2,6 +2,7 @@ local scriptPath = (arg and arg[0]) or ""
 local root = scriptPath:match("(.+)/tests/run%.lua$") or "."
 
 local specs = {
+    "strings_spec.lua",
     "normalizer_spec.lua",
     "state_spec.lua",
     "profile_index_spec.lua",
@@ -10,6 +11,8 @@ local specs = {
     "restorer_spec.lua",
     "autoload_spec.lua",
     "profile_actions_spec.lua",
+    "action_resolver_spec.lua",
+    "scanner_spec.lua",
 }
 
 local failed = 0

@@ -187,6 +187,7 @@ function support.load_addon(root)
 
     load("Core/Constants.lua")
     load("Core/WoWConstants.lua")
+    load("Core/Strings.lua")
     load("Core/Text.lua")
     load("Core/Defaults.lua")
     load("Core/Normalizer.lua")
@@ -198,8 +199,9 @@ function support.load_addon(root)
     load("UI/SlashCommands.lua")
 end
 
--- Loads the full addon including WoW-API-dependent modules. ActionAPI and
--- Restorer guard all WoW API calls so they run safely in a plain Lua host.
+-- Loads the full addon including WoW-API-dependent modules. ActionAPI,
+-- Scanner, and Restorer guard all WoW API calls so they run safely in a
+-- plain Lua host.
 function support.load_full(root)
     support.load_addon(root)
     local function load(path)
@@ -208,6 +210,7 @@ function support.load_full(root)
     end
     load("Core/ActionAPI.lua")
     load("Core/ActionResolver.lua")
+    load("Core/Scanner.lua")
     load("Core/Restorer.lua")
 end
 

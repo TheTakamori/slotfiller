@@ -12,7 +12,6 @@ function SlotFiller.Defaults.Get()
             hidden = false,
         },
         profiles = {},
-        activeProfile = nil,
         knownCharacters = {},
     }
 end

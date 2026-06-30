@@ -1,29 +1,23 @@
 local _, SlotFiller = ...
 
 local Constants = SlotFiller.Constants
+local Strings = SlotFiller.Strings
 
 SlotFiller.Normalizer = {}
-
-local function trim(text)
-    if type(text) ~= "string" then
-        return ""
-    end
-    return (text:gsub("^%s+", ""):gsub("%s+$", ""))
-end
 
 function SlotFiller.Normalizer.CompressMacroText(text)
     text = text or ""
     text = text:gsub("\n", "/n")
     text = text:gsub("/n$", "")
     text = text:gsub("||", "/124")
-    return trim(text)
+    return Strings.Trim(text)
 end
 
 function SlotFiller.Normalizer.UncompressMacroText(text)
     text = text or ""
     text = text:gsub("/n", "\n")
     text = text:gsub("/124", "|")
-    return trim(text)
+    return Strings.Trim(text)
 end
 
 function SlotFiller.Normalizer.IsSupportedActionType(actionType)
@@ -87,6 +81,12 @@ function SlotFiller.Normalizer.FromRaw(raw)
         slot.actionID = raw.actionID
         slot.name = raw.name
         slot.body = SlotFiller.Normalizer.CompressMacroText(raw.body)
+        slot.icon = raw.icon
+        -- Only persist the flag for character-specific macros so global macro slots
+        -- never accidentally trigger the create-on-restore path.
+        if raw.perCharacter then
+            slot.perCharacter = true
+        end
     elseif actionType == Constants.ACTION_TYPE.FLYOUT then
         slot.id = raw.id
         slot.name = raw.name

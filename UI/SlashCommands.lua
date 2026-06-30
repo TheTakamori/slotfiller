@@ -2,20 +2,17 @@ local _, SlotFiller = ...
 
 local Constants = SlotFiller.Constants
 local Text = SlotFiller.Text
+local Strings = SlotFiller.Strings
 
 SlotFiller.SlashParser = {}
 
-local function trim(text)
-    return (text or ""):match("^%s*(.-)%s*$") or ""
-end
-
 local function splitOnce(text)
     local first, rest = text:match("^(%S+)%s*(.*)$")
-    return first, trim(rest)
+    return first, Strings.Trim(rest)
 end
 
 function SlotFiller.SlashParser.Parse(message)
-    local trimmed = trim(message)
+    local trimmed = Strings.Trim(message)
     if trimmed == "" then
         return { verb = Constants.COMMAND.OPEN }
     end
@@ -40,7 +37,7 @@ function SlotFiller.SlashParser.Parse(message)
         return {
             verb = Constants.COMMAND.RENAME,
             oldName = oldName,
-            newName = trim(newName),
+            newName = Strings.Trim(newName),
         }
     end
     if verb == Constants.COMMAND.DUPLICATE then
@@ -48,7 +45,7 @@ function SlotFiller.SlashParser.Parse(message)
         return {
             verb = Constants.COMMAND.DUPLICATE,
             sourceName = sourceName,
-            newName = trim(newName),
+            newName = Strings.Trim(newName),
         }
     end
     if verb == Constants.COMMAND.HELP then
@@ -114,7 +111,34 @@ function SlotFiller.UI.SlashCommands:Handle(message)
         return
     end
 
+    if verb == Constants.COMMAND.ERRORS then
+        local errors = SlotFiller.Restorer:GetLastErrors()
+        if #errors == 0 then
+            SlotFiller.Print(Text.NO_ERRORS)
+        else
+            for _, line in ipairs(errors) do
+                SlotFiller.Print(line)
+            end
+        end
+        return
+    end
+
     if not SlotFiller.Context.RequireReady() then
+        return
+    end
+
+    if verb == Constants.COMMAND.SCAN then
+        local count = 0
+        for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
+            local actionType, id, subType, extraID = SlotFiller.ActionAPI.GetSlotActionInfo(actionID)
+            if actionType and actionType ~= "" then
+                count = count + 1
+                SlotFiller.Print(string.format("[%d] type=%s id=%s sub=%s extra=%s",
+                    actionID, tostring(actionType), tostring(id),
+                    tostring(subType), tostring(extraID)))
+            end
+        end
+        SlotFiller.Print(string.format("Scan complete: %d occupied slots.", count))
         return
     end
 

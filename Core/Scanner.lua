@@ -33,17 +33,21 @@ local function getItemName(itemID)
 end
 
 local function readMacro(actionID, macroID)
-    local name, _, body
+    local name, icon, body
     if GetMacroInfo and macroID then
-        name, _, body = GetMacroInfo(macroID)
+        name, icon, body = GetMacroInfo(macroID)
     end
     if (not name or name == "") and GetActionText then
         name = GetActionText(actionID)
     end
-    return name, body
+    -- Character-specific macros occupy slots above MAX_ACCOUNT_MACROS (120).
+    local perCharacter = macroID ~= nil and macroID > (MAX_ACCOUNT_MACROS or 120)
+    return name, icon, body, perCharacter
 end
 
-function SlotFiller.Scanner:ReadSlot(actionID)
+-- zoneAbilities is an optional pre-fetched list from C_ZoneAbility.GetActiveAbilities(),
+-- passed in by Scan() to avoid redundant API calls across the full slot range.
+function SlotFiller.Scanner:ReadSlot(actionID, zoneAbilities)
     local actionType, id, subType, extraID = ActionAPI.GetSlotActionInfo(actionID)
     -- Replicate HasSlotAction logic with already-fetched values to avoid a
     -- second GetSlotActionInfo call per slot (saves 180 redundant API calls
@@ -70,9 +74,8 @@ function SlotFiller.Scanner:ReadSlot(actionID)
         -- Detect Draenor/zone abilities (hidden from spellbook; managed by C_ZoneAbility).
         -- Tagging them here lets the Restorer use the correct pickup path and surface a
         -- meaningful error if restoration fails rather than silently skipping the slot.
-        if C_ZoneAbility and C_ZoneAbility.GetActiveAbilities then
-            local zoneAbilities = C_ZoneAbility.GetActiveAbilities()
-            for _, za in ipairs(zoneAbilities or {}) do
+        if zoneAbilities then
+            for _, za in ipairs(zoneAbilities) do
                 if za.spellID == id then
                     raw.isZoneAbility = true
                     break
@@ -82,9 +85,11 @@ function SlotFiller.Scanner:ReadSlot(actionID)
     elseif actionType == Constants.ACTION_TYPE.ITEM then
         raw.name = getItemName(id)
     elseif actionType == Constants.ACTION_TYPE.MACRO then
-        local name, body = readMacro(actionID, id)
+        local name, icon, body, perCharacter = readMacro(actionID, id)
         raw.name = name
+        raw.icon = icon
         raw.body = body
+        raw.perCharacter = perCharacter
     elseif actionType == Constants.ACTION_TYPE.FLYOUT then
         raw.name = getFlyoutName(id)
     elseif actionType == Constants.ACTION_TYPE.SUMMONPET then
@@ -103,8 +108,10 @@ end
 
 function SlotFiller.Scanner:Scan()
     local slots = {}
+    local zoneAbilities = (C_ZoneAbility and C_ZoneAbility.GetActiveAbilities)
+        and C_ZoneAbility.GetActiveAbilities() or nil
     for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
-        local slot = self:ReadSlot(actionID)
+        local slot = self:ReadSlot(actionID, zoneAbilities)
         if slot then
             slots[actionID] = slot
         end
