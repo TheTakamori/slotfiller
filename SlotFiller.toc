@@ -2,7 +2,7 @@
 ## Title: Slot Filler
 ## Notes: Save and swap action bar slot assignments (account-wide profiles) with /sfill.
 ## Author: Takamori
-## Version: 1.1.1
+## Version: 1.2.0
 ## IconTexture: Interface\AddOns\SlotFiller\Media\Icons\slotfiller-64.png
 ## SavedVariables: SlotFillerDB
 

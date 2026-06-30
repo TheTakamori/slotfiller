@@ -1,7 +1,7 @@
 local _, SlotFiller = ...
 
 SlotFiller.Constants = {
-    VERSION = "1.1.1",
+    VERSION = "1.2.0",
     ADDON_NAME = "SlotFiller",
     ADDON_TITLE = "Slot Filler",
     SAVED_VARIABLES = "SlotFillerDB",
