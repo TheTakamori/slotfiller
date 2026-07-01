@@ -5,55 +5,162 @@ local support = assert(loadfile(root .. "/tests/support.lua"))()
 
 local runner = support.new_runner()
 
-_G.ClearCursor = function() end
-
 support.load_full(root)
 
-local R   = SlotFiller.ActionResolver
-local C   = SlotFiller.Constants
-local API = SlotFiller.ActionAPI
-local T   = SlotFiller.Text
+local R       = SlotFiller.ActionResolver
+local C       = SlotFiller.Constants
+local API     = SlotFiller.ActionAPI
+local BookAPI = SlotFiller.SpellBookAPI
+local T       = SlotFiller.Text
 
--- ---------------------------------------------------------------------------
--- Helpers
--- ---------------------------------------------------------------------------
-
-local function emptyCaches()
-    return { spell = {}, flyout = {}, macroBody = {}, macroName = {}, macroID = {} }
-end
+local emptyCaches = support.empty_restore_caches
 
 -- ---------------------------------------------------------------------------
 -- Spell dispatch
 -- ---------------------------------------------------------------------------
 
 runner:test("spell slot: succeeds via spellbook index when ID is in cache", function()
-    local originalRestorable = API.IsSpellRestorable
+    local originalRestorable = BookAPI.IsSpellRestorable
     local originalPickupIdx  = API.PickupSpellBookIndex
-    API.IsSpellRestorable    = function() return true end
+    BookAPI.IsSpellRestorable = function() return true end
     API.PickupSpellBookIndex = function() return true end
 
     local caches = emptyCaches()
     caches.spell[133] = 5
     local picked, err = R.PickupToCursor({ type = C.ACTION_TYPE.SPELL, id = 133 }, 1, caches)
 
-    API.IsSpellRestorable    = originalRestorable
-    API.PickupSpellBookIndex = originalPickupIdx
+    BookAPI.IsSpellRestorable = originalRestorable
+    API.PickupSpellBookIndex  = originalPickupIdx
 
     support.assert.equal(picked, true, "spell picked up via ID cache")
     support.assert.isNil(err, "no error on success")
 end)
 
 runner:test("spell slot: silently skipped when not restorable (off-spec)", function()
-    local originalRestorable = API.IsSpellRestorable
-    API.IsSpellRestorable    = function() return false end
+    local originalRestorable = BookAPI.IsSpellRestorable
+    BookAPI.IsSpellRestorable = function() return false end
 
     local picked, err = R.PickupToCursor(
         { type = C.ACTION_TYPE.SPELL, id = 99999 }, 1, emptyCaches())
 
-    API.IsSpellRestorable = originalRestorable
+    BookAPI.IsSpellRestorable = originalRestorable
 
     support.assert.equal(picked, false, "not picked")
     support.assert.isNil(err, "no error — silent skip")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Zone ability spell path
+-- ---------------------------------------------------------------------------
+
+runner:test("zone-ability spell: succeeds via PickupZoneAbility, bypassing IsSpellRestorable", function()
+    local originalRestorable = BookAPI.IsSpellRestorable
+    local originalZoneAbility = API.PickupZoneAbility
+    BookAPI.IsSpellRestorable = function() error("must not be called for zone abilities") end
+    API.PickupZoneAbility = function() return true end
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.SPELL, id = 161676, isZoneAbility = true }, 6, emptyCaches())
+
+    BookAPI.IsSpellRestorable = originalRestorable
+    API.PickupZoneAbility = originalZoneAbility
+
+    support.assert.equal(picked, true, "zone ability picked up")
+    support.assert.isNil(err, "no error on success")
+end)
+
+runner:test("zone-ability spell: error when PickupZoneAbility fails", function()
+    local originalZoneAbility = API.PickupZoneAbility
+    API.PickupZoneAbility = function() return false end
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.SPELL, id = 161676, isZoneAbility = true }, 6, emptyCaches())
+
+    API.PickupZoneAbility = originalZoneAbility
+
+    support.assert.equal(picked, false, "not picked")
+    support.assert.isTrue(err ~= nil, "error returned (unexpected failure, not silent)")
+    support.assert.isTrue(err:find("slot 6") ~= nil, "error names the slot")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Macro dispatch
+-- ---------------------------------------------------------------------------
+
+runner:test("macro slot: succeeds by matching an existing macro by name", function()
+    local originalPickupMacro = API.PickupMacroID
+    API.PickupMacroID = function() return true end
+
+    local caches = emptyCaches()
+    caches.macroName["Heal"] = 7
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.MACRO, name = "Heal", body = "/cast Heal" }, 2, caches)
+
+    API.PickupMacroID = originalPickupMacro
+
+    support.assert.equal(picked, true, "macro picked up via existing macro match")
+    support.assert.isNil(err, "no error on success")
+end)
+
+runner:test("macro slot: creates a character macro on no match when perCharacter", function()
+    local originalCreate = API.CreateCharacterMacro
+    local originalPickupMacro = API.PickupMacroID
+    API.CreateCharacterMacro = function() return 555 end
+    API.PickupMacroID = function() return true end
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.MACRO, name = "NewMacro", body = "/cast X", perCharacter = true },
+        2, emptyCaches())
+
+    API.CreateCharacterMacro = originalCreate
+    API.PickupMacroID = originalPickupMacro
+
+    support.assert.equal(picked, true, "newly created macro picked up")
+    support.assert.isNil(err, "no error on success")
+end)
+
+runner:test("macro slot: error when the character macro limit is full", function()
+    local originalCreate = API.CreateCharacterMacro
+    API.CreateCharacterMacro = function() return nil, "limit" end
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.MACRO, name = "Overflow", body = "/cast X", perCharacter = true },
+        4, emptyCaches())
+
+    API.CreateCharacterMacro = originalCreate
+
+    support.assert.equal(picked, false, "not picked")
+    support.assert.isTrue(err ~= nil, "error returned")
+    support.assert.isTrue(err:find("Overflow") ~= nil, "macro name in error")
+    support.assert.isTrue(err:find("slot 4") ~= nil, "slot in error")
+end)
+
+runner:test("macro slot: not_found error for a missing global macro (not perCharacter)", function()
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.MACRO, name = "Ghost", body = "/cast Gone", perCharacter = false },
+        8, emptyCaches())
+
+    support.assert.equal(picked, false, "not picked")
+    support.assert.isTrue(err ~= nil, "error returned")
+    support.assert.isTrue(err:find("Ghost") ~= nil, "macro name in error")
+end)
+
+runner:test("macro slot: error when macro is resolved but ActionAPI.PickupMacroID itself fails", function()
+    local originalPickupMacro = API.PickupMacroID
+    API.PickupMacroID = function() return false end
+
+    local caches = emptyCaches()
+    caches.macroName["Heal"] = 7
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.MACRO, name = "Heal", body = "/cast Heal" }, 9, caches)
+
+    API.PickupMacroID = originalPickupMacro
+
+    support.assert.equal(picked, false, "not picked")
+    support.assert.isTrue(err ~= nil, "error returned even though macro was resolved")
+    support.assert.isTrue(err:find("slot 9") ~= nil, "slot in error")
 end)
 
 -- ---------------------------------------------------------------------------
@@ -174,6 +281,38 @@ runner:test("equipmentset slot: error when PickupEquipmentSetName fails", functi
     support.assert.equal(picked, false, "not picked")
     support.assert.isTrue(err ~= nil, "error returned")
     support.assert.isTrue(err:find("slot 14") ~= nil, "slot in error")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Outfit dispatch
+-- ---------------------------------------------------------------------------
+
+runner:test("outfit slot: succeeds when PickupOutfitID returns true", function()
+    local originalPickup = API.PickupOutfitID
+    API.PickupOutfitID = function() return true end
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.OUTFIT, id = 42, name = "Tank Set" }, 13, emptyCaches())
+
+    API.PickupOutfitID = originalPickup
+
+    support.assert.equal(picked, true, "outfit picked")
+    support.assert.isNil(err, "no error")
+end)
+
+runner:test("outfit slot: error when PickupOutfitID fails", function()
+    local originalPickup = API.PickupOutfitID
+    API.PickupOutfitID = function() return false end
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.OUTFIT, id = 42, name = "Tank Set" }, 13, emptyCaches())
+
+    API.PickupOutfitID = originalPickup
+
+    support.assert.equal(picked, false, "not picked")
+    support.assert.isTrue(err ~= nil, "error returned")
+    support.assert.isTrue(err:find("slot 13") ~= nil, "slot in error")
+    support.assert.isTrue(err:find("Tank Set") ~= nil, "outfit name in error")
 end)
 
 -- ---------------------------------------------------------------------------

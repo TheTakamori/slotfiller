@@ -3,6 +3,7 @@ local _, SlotFiller = ...
 local Constants = SlotFiller.Constants
 local Text = SlotFiller.Text
 local Colors = Constants.COLORS
+local CopyFrameLayout = Constants.COPY_FRAME
 
 SlotFiller.UI = SlotFiller.UI or {}
 SlotFiller.UI.CopyFrame = {}
@@ -11,7 +12,7 @@ local frame
 
 local function build()
     frame = CreateFrame("Frame", "SlotFillerCopyFrame", UIParent, "BasicFrameTemplateWithInset")
-    frame:SetSize(520, 380)
+    frame:SetSize(CopyFrameLayout.WIDTH, CopyFrameLayout.HEIGHT)
     frame:SetPoint("CENTER")
     frame:SetMovable(true)
     frame:EnableMouse(true)
@@ -25,13 +26,13 @@ local function build()
     end
 
     local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hint:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -30)
+    hint:SetPoint("TOPLEFT", frame, "TOPLEFT", CopyFrameLayout.HINT_OFFSET_X, CopyFrameLayout.HINT_OFFSET_Y)
     hint:SetText(Text.UI_COPY_HINT)
     hint:SetTextColor(Colors.MUTED[1], Colors.MUTED[2], Colors.MUTED[3], Colors.MUTED[4])
 
     local sf = CreateFrame("ScrollFrame", "SlotFillerCopyScrollFrame", frame, "UIPanelScrollFrameTemplate")
-    sf:SetPoint("TOPLEFT",  frame, "TOPLEFT",  8, -50)
-    sf:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -28, 8)
+    sf:SetPoint("TOPLEFT",  frame, "TOPLEFT",  CopyFrameLayout.SCROLL_INSET_LEFT, CopyFrameLayout.SCROLL_INSET_TOP)
+    sf:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", CopyFrameLayout.SCROLL_INSET_RIGHT, CopyFrameLayout.SCROLL_INSET_BOTTOM)
 
     local eb = CreateFrame("EditBox", "SlotFillerCopyEditBox", sf)
     eb:SetWidth(sf:GetWidth())

@@ -5,121 +5,14 @@ local support = assert(loadfile(root .. "/tests/support.lua"))()
 
 local runner = support.new_runner()
 
--- ClearCursor is called on several unguarded code paths in RestoreSlot.
--- Provide a no-op stub so those paths don't crash in the test host.
-_G.ClearCursor = function() end
-
 support.load_full(root)
 
 local R = SlotFiller.Restorer
 local C = SlotFiller.Constants
 
--- ---------------------------------------------------------------------------
--- Helpers
--- ---------------------------------------------------------------------------
-
--- Install mock macro data and return (bodyCache, nameCache, idCache).
-local function setup_macros(macros)
-    _G.MAX_ACCOUNT_MACROS = #macros
-    _G.MAX_CHARACTER_MACROS = 0
-    _G.GetMacroInfo = function(id)
-        local m = macros[id]
-        if not m then return nil end
-        return m[1], m[2], m[3]  -- name, icon, body
-    end
-    return R:BuildMacroCache()
-end
-
-local function teardown_macros()
-    _G.GetMacroInfo = nil
-    _G.MAX_ACCOUNT_MACROS = nil
-    _G.MAX_CHARACTER_MACROS = nil
-end
-
--- ---------------------------------------------------------------------------
--- BuildMacroCache
--- ---------------------------------------------------------------------------
-
-runner:test("BuildMacroCache indexes body, name, and id", function()
-    local body, name, id = setup_macros({
-        { "Fireball", nil, "/cast Fireball" },
-        { "Frost",    nil, "/cast Frostbolt" },
-    })
-    teardown_macros()
-
-    local compressed1 = SlotFiller.Normalizer.CompressMacroText("/cast Fireball")
-    local compressed2 = SlotFiller.Normalizer.CompressMacroText("/cast Frostbolt")
-
-    support.assert.equal(body[compressed1], 1, "body cache points to macro 1")
-    support.assert.equal(body[compressed2], 2, "body cache points to macro 2")
-    support.assert.equal(name["Fireball"],  1, "name cache points to macro 1")
-    support.assert.equal(name["Frost"],     2, "name cache points to macro 2")
-    support.assert.equal(id[1],             1, "id cache has macro 1")
-    support.assert.equal(id[2],             2, "id cache has macro 2")
-end)
-
-runner:test("BuildMacroCache blacklists duplicate macro names", function()
-    local _, nameCache, _ = setup_macros({
-        { "Shared", nil, "/cast Fireball" },
-        { "Shared", nil, "/cast Frostbolt" },
-        { "Unique", nil, "/cast Ice Lance" },
-    })
-    teardown_macros()
-
-    support.assert.isNil(nameCache["Shared"], "duplicate name blacklisted from name cache")
-    support.assert.equal(nameCache["Unique"], 3, "unique name kept in name cache")
-end)
-
--- ---------------------------------------------------------------------------
--- FindMacroID
--- ---------------------------------------------------------------------------
-
-runner:test("FindMacroID matches by saved macroID first", function()
-    local body, name, id = setup_macros({
-        { "Fireball", nil, "/cast Fireball" },
-    })
-    teardown_macros()
-
-    local slot = {
-        macroID = 1,
-        name = "Fireball",
-        body = SlotFiller.Normalizer.CompressMacroText("/cast Fireball"),
-    }
-    support.assert.equal(R:FindMacroID(slot, body, name, id), 1, "matched by macroID")
-end)
-
-runner:test("FindMacroID falls back to body match when macroID absent from cache", function()
-    local body, name, id = setup_macros({
-        { "Fireball", nil, "/cast Fireball" },
-    })
-    teardown_macros()
-
-    local slot = {
-        macroID = 99,  -- stale id not in cache
-        body = SlotFiller.Normalizer.CompressMacroText("/cast Fireball"),
-    }
-    support.assert.equal(R:FindMacroID(slot, body, name, id), 1, "matched by body")
-end)
-
-runner:test("FindMacroID falls back to name match when body absent", function()
-    local body, name, id = setup_macros({
-        { "Fireball", nil, "/cast Fireball" },
-    })
-    teardown_macros()
-
-    local slot = { name = "Fireball" }
-    support.assert.equal(R:FindMacroID(slot, body, name, id), 1, "matched by name")
-end)
-
-runner:test("FindMacroID returns nil when nothing matches", function()
-    local body, name, id = setup_macros({
-        { "Fireball", nil, "/cast Fireball" },
-    })
-    teardown_macros()
-
-    local slot = { macroID = 99, name = "Ghost", body = "/no_match" }
-    support.assert.isNil(R:FindMacroID(slot, body, name, id), "no match returns nil")
-end)
+-- Macro cache/find/create tests live in tests/macro_resolver_spec.lua
+-- (Core/MacroResolver.lua); the remaining tests here exercise ApplyProfile's
+-- end-to-end behavior, which still depends on macro recreation indirectly.
 
 -- ---------------------------------------------------------------------------
 -- GetLastErrors / GetLastErrorsText
@@ -264,8 +157,8 @@ end)
 
 runner:test("off-spec spell is silently skipped with no error", function()
     -- IsSpellRestorable returns false → skip with no error.
-    local originalRestorable = SlotFiller.ActionAPI.IsSpellRestorable
-    SlotFiller.ActionAPI.IsSpellRestorable = function() return false end
+    local originalRestorable = SlotFiller.SpellBookAPI.IsSpellRestorable
+    SlotFiller.SpellBookAPI.IsSpellRestorable = function() return false end
 
     _G.MAX_ACCOUNT_MACROS = 0
     _G.MAX_CHARACTER_MACROS = 0
@@ -276,7 +169,7 @@ runner:test("off-spec spell is silently skipped with no error", function()
         },
     }
     local ok, errCount = R:ApplyProfile(profile)
-    SlotFiller.ActionAPI.IsSpellRestorable = originalRestorable
+    SlotFiller.SpellBookAPI.IsSpellRestorable = originalRestorable
 
     support.assert.equal(ok, true, "apply succeeds")
     support.assert.equal(errCount, 0, "no error for off-spec spell")
@@ -779,6 +672,83 @@ runner:test("ActionAPI.CreateCharacterMacro returns new macroID on success", fun
 
     support.assert.equal(id,     121, "macroID returned on success")
     support.assert.isNil(reason,      "no error reason on success")
+end)
+
+-- ---------------------------------------------------------------------------
+-- ApplyProfile — petSlots wiring
+-- ---------------------------------------------------------------------------
+
+runner:test("ApplyProfile applies petSlots via PetBar when present", function()
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local applied = nil
+    local originalApply = SlotFiller.PetBar.Apply
+    SlotFiller.PetBar.Apply = function(_, petSlots) applied = petSlots end
+
+    local profile = { slots = {}, petSlots = { [1] = { type = "spell", spellID = 5 } } }
+    R:ApplyProfile(profile)
+
+    SlotFiller.PetBar.Apply = originalApply
+
+    support.assert.equal(applied[1].spellID, 5, "petSlots forwarded to PetBar:Apply")
+end)
+
+runner:test("ApplyProfile does not call PetBar:Apply when profile has no petSlots", function()
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local called = false
+    local originalApply = SlotFiller.PetBar.Apply
+    SlotFiller.PetBar.Apply = function() called = true end
+
+    R:ApplyProfile({ slots = {} })
+
+    SlotFiller.PetBar.Apply = originalApply
+
+    support.assert.isFalse(called, "PetBar:Apply skipped without petSlots")
+end)
+
+-- ---------------------------------------------------------------------------
+-- ApplyProfile — clickBindings wiring
+-- ---------------------------------------------------------------------------
+
+runner:test("ApplyProfile applies clickBindings via ClickBindings and records returned errors", function()
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local receivedEntries = nil
+    local originalApply = SlotFiller.ClickBindings.Apply
+    SlotFiller.ClickBindings.Apply = function(_, entries)
+        receivedEntries = entries
+        return { "click binding problem" }
+    end
+
+    local profile = { slots = {}, clickBindings = { { bindingType = 1, button = "Button4" } } }
+    local ok, errCount = R:ApplyProfile(profile)
+
+    SlotFiller.ClickBindings.Apply = originalApply
+
+    support.assert.equal(ok, true, "apply succeeds")
+    support.assert.equal(errCount, 1, "click binding error counted")
+    support.assert.equal(receivedEntries[1].button, "Button4", "clickBindings forwarded")
+    support.assert.isTrue(R:GetLastErrorsText():find("click binding problem") ~= nil,
+        "click binding error message recorded")
+end)
+
+runner:test("ApplyProfile does not call ClickBindings:Apply when profile has no clickBindings", function()
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
+
+    local called = false
+    local originalApply = SlotFiller.ClickBindings.Apply
+    SlotFiller.ClickBindings.Apply = function() called = true return {} end
+
+    R:ApplyProfile({ slots = {} })
+
+    SlotFiller.ClickBindings.Apply = originalApply
+
+    support.assert.isFalse(called, "ClickBindings:Apply skipped without clickBindings")
 end)
 
 os.exit(runner:run())

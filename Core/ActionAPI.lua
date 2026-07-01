@@ -8,33 +8,6 @@ local PLAYER_SPELL_BANK = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSp
 -- hardcode the player spellbook bank literal themselves.
 SlotFiller.ActionAPI.PLAYER_SPELL_BANK = PLAYER_SPELL_BANK
 
-local function isOnCurrentSpecSkillLine(skillLineInfo)
-    if not skillLineInfo then
-        return false
-    end
-    if skillLineInfo.isOffSpec then
-        return false
-    end
-    if skillLineInfo.offSpecID and skillLineInfo.offSpecID ~= 0 then
-        return false
-    end
-    return true
-end
-
-local function isSpellBookItemType(itemInfo)
-    if not itemInfo or not itemInfo.itemType then
-        return true
-    end
-    -- Exclude flyout menus — everything else (spell, assistedcombat, etc.) is welcome
-    if Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout then
-        if itemInfo.itemType == Enum.SpellBookItemType.Flyout then
-            return false
-        end
-    end
-    local t = type(itemInfo.itemType) == "string" and string.lower(itemInfo.itemType) or ""
-    return t ~= "flyout"
-end
-
 function SlotFiller.ActionAPI.GetSlotActionInfo(actionID)
     if C_ActionBar and C_ActionBar.GetActionInfo then
         local actionType, id, subType, extraID = C_ActionBar.GetActionInfo(actionID)
@@ -82,25 +55,6 @@ function SlotFiller.ActionAPI.PlaceSlot(actionID)
     if ClearCursor then
         ClearCursor()
     end
-end
-
--- Returns true when spellID is known by or appears in the player's current spellbook,
--- meaning it can be placed on the action bar.  Used by ActionResolver to skip spells
--- that belong to a different class or inactive spec without emitting spurious errors.
-function SlotFiller.ActionAPI.IsSpellRestorable(spellID)
-    if not spellID then return false end
-    if C_SpellBook then
-        if C_SpellBook.IsSpellKnownOrInSpellBook then
-            -- includeOverrides = true catches talent-overridden base spells.
-            return C_SpellBook.IsSpellKnownOrInSpellBook(spellID, PLAYER_SPELL_BANK, true) == true
-        end
-        if C_SpellBook.IsSpellKnown then
-            return C_SpellBook.IsSpellKnown(spellID, PLAYER_SPELL_BANK) == true
-        end
-    end
-    -- API unavailable (test host or pre-Midnight build): assume valid and let the
-    -- pickup attempt determine restorability.
-    return true
 end
 
 function SlotFiller.ActionAPI.PickupSpellID(spellID)
@@ -220,14 +174,14 @@ function SlotFiller.ActionAPI.CreateCharacterMacro(name, icon, body)
     end
 
     local _, perChar = GetNumMacros()
-    local limit = MAX_CHARACTER_MACROS or 18
+    local limit = MAX_CHARACTER_MACROS or Constants.MAX_CHARACTER_MACROS_FALLBACK
     if perChar >= limit then
         return nil, "limit"
     end
 
     local ok, result = pcall(CreateMacro,
         name or "Macro",
-        icon or "INV_MISC_QUESTIONMARK",
+        icon or Constants.DEFAULT_MACRO_ICON,
         body or "",
         true)
 
@@ -252,41 +206,9 @@ function SlotFiller.ActionAPI.PickupItemID(itemID)
     return GetCursorInfo and GetCursorInfo() == "item"
 end
 
--- Builds a cache of flyoutID -> spellBookIndex for all flyout entries visible in the
--- current spec's spellbook.  Used as a fallback by PickupFlyoutID for newer flyouts
--- (e.g. Midnight portal menus) that cannot be picked up directly by flyout ID.
-function SlotFiller.ActionAPI.BuildFlyoutBookCache()
-    local cache = {}
-    if not C_SpellBook or not C_SpellBook.GetNumSpellBookSkillLines then
-        return cache
-    end
-    for tabIndex = 1, C_SpellBook.GetNumSpellBookSkillLines() do
-        local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tabIndex)
-        if skillLineInfo and not skillLineInfo.isGuild and isOnCurrentSpecSkillLine(skillLineInfo) then
-            local offset = skillLineInfo.itemIndexOffset or 0
-            local numSpells = skillLineInfo.numSpellBookItems or 0
-            for spellIndex = 1, numSpells do
-                local bookIndex = offset + spellIndex
-                local itemInfo = SlotFiller.ActionAPI.GetSpellBookItemInfo(bookIndex)
-                if itemInfo and itemInfo.actionID then
-                    local isFlyout = false
-                    if Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout then
-                        isFlyout = itemInfo.itemType == Enum.SpellBookItemType.Flyout
-                    elseif type(itemInfo.itemType) == "string" then
-                        isFlyout = string.lower(itemInfo.itemType) == "flyout"
-                    end
-                    if isFlyout then
-                        cache[itemInfo.actionID] = bookIndex
-                    end
-                end
-            end
-        end
-    end
-    return cache
-end
-
 -- flyoutBookCache is optional; when provided (e.g. from ApplyProfile's pre-built cache)
--- the call to BuildFlyoutBookCache is skipped to avoid redundant spellbook iteration.
+-- the call to SpellBookAPI.BuildFlyoutBookCache is skipped to avoid redundant spellbook
+-- iteration.
 function SlotFiller.ActionAPI.PickupFlyoutID(flyoutID, flyoutBookCache)
     if not flyoutID then
         return false
@@ -312,7 +234,7 @@ function SlotFiller.ActionAPI.PickupFlyoutID(flyoutID, flyoutBookCache)
     -- Newer Midnight flyouts (e.g. Hero's Path portal menus) have flyout IDs that
     -- cannot be resolved via PickupSpell but are accessible as spellbook entries.
     if C_SpellBook and C_SpellBook.PickupSpellBookItem then
-        local fc = flyoutBookCache or SlotFiller.ActionAPI.BuildFlyoutBookCache()
+        local fc = flyoutBookCache or SlotFiller.SpellBookAPI.BuildFlyoutBookCache()
         local bookIndex = fc[flyoutID]
         if bookIndex then
             C_SpellBook.PickupSpellBookItem(bookIndex, PLAYER_SPELL_BANK)
@@ -380,6 +302,36 @@ function SlotFiller.ActionAPI.PickupMountByID(mountActionID)
     return ok and picked or false
 end
 
+-- Restores a Transmog Outfit action-bar button. Outfits are account-wide, but
+-- the saved outfitID may not exist on a different account/installation, or
+-- after the outfit was deleted and recreated — fall back to matching by name,
+-- mirroring the equipment-set restore path above.
+function SlotFiller.ActionAPI.PickupOutfitID(outfitID, fallbackName)
+    if not (C_TransmogOutfitInfo and C_TransmogOutfitInfo.PickupOutfit) then
+        return false
+    end
+
+    if outfitID then
+        C_TransmogOutfitInfo.PickupOutfit(outfitID)
+        local cursorType = GetCursorInfo and GetCursorInfo()
+        if cursorType and cursorType ~= "" then
+            return true
+        end
+        if ClearCursor then ClearCursor() end
+    end
+
+    if fallbackName and fallbackName ~= "" and C_TransmogOutfitInfo.GetOutfitInfoByName then
+        local outfitInfo = C_TransmogOutfitInfo.GetOutfitInfoByName(fallbackName)
+        if outfitInfo and outfitInfo.outfitID then
+            C_TransmogOutfitInfo.PickupOutfit(outfitInfo.outfitID)
+            local cursorType = GetCursorInfo and GetCursorInfo()
+            return cursorType ~= nil and cursorType ~= ""
+        end
+    end
+
+    return false
+end
+
 function SlotFiller.ActionAPI.PickupEquipmentSetName(setName)
     if not setName then
         return false
@@ -416,64 +368,3 @@ function SlotFiller.ActionAPI.PickupBattlePet(petGUID)
     return GetCursorInfo and GetCursorInfo() == "battlepet"
 end
 
-function SlotFiller.ActionAPI.GetSpellBookItemInfo(bookIndex)
-    if not bookIndex or not C_SpellBook or not C_SpellBook.GetSpellBookItemInfo then
-        return nil
-    end
-    return C_SpellBook.GetSpellBookItemInfo(bookIndex, PLAYER_SPELL_BANK)
-end
-
-function SlotFiller.ActionAPI.IterateSpellBookEntries(callback)
-    if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines and C_SpellBook.GetSpellBookSkillLineInfo then
-        for tabIndex = 1, C_SpellBook.GetNumSpellBookSkillLines() do
-            local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tabIndex)
-            if skillLineInfo and not skillLineInfo.isGuild and isOnCurrentSpecSkillLine(skillLineInfo) then
-                local offset = skillLineInfo.itemIndexOffset or 0
-                local numSpells = skillLineInfo.numSpellBookItems or 0
-                for spellIndex = 1, numSpells do
-                    local bookIndex = offset + spellIndex
-                    local itemInfo = SlotFiller.ActionAPI.GetSpellBookItemInfo(bookIndex)
-                    if itemInfo and itemInfo.name and not itemInfo.isOffSpec and isSpellBookItemType(itemInfo) then
-                        callback(bookIndex, itemInfo.name, itemInfo.subName, itemInfo.spellID or itemInfo.actionID)
-                    end
-                end
-            end
-        end
-        return
-    end
-
-    if not GetSpellTabInfo or not GetSpellBookItemName then
-        return
-    end
-
-    for tabIndex = 1, (MAX_SKILLLINE_TABS or 8) do
-        local _, _, offset, numSpells, _, offSpecID = GetSpellTabInfo(tabIndex)
-        if (offSpecID == nil or offSpecID == 0) and numSpells and numSpells > 0 then
-            for spellIndex = 1, numSpells do
-                local bookIndex = offset + spellIndex
-                local spellName, spellSubName = GetSpellBookItemName(bookIndex, "spell")
-                if spellName then
-                    callback(bookIndex, spellName, spellSubName, nil)
-                end
-            end
-        end
-    end
-end
-
-function SlotFiller.ActionAPI.BuildSpellBookCache()
-    local cache = {}
-    SlotFiller.ActionAPI.IterateSpellBookEntries(function(bookIndex, spellName, spellSubName, spellID)
-        cache[spellName] = bookIndex
-        cache[string.lower(spellName)] = bookIndex
-        if spellSubName and spellSubName ~= "" then
-            cache[spellName .. spellSubName] = bookIndex
-        end
-        if spellID then
-            cache[spellID] = bookIndex
-        end
-    end)
-    return cache
-end
--- Spellbook scan confirmed that the SBA (assistedcombat) button does not appear in
--- any spellbook skill line and cannot be picked up programmatically. Restoration
--- relies solely on PickupAction from an existing SBA slot on the action bars.

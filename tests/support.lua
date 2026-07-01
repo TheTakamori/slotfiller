@@ -174,6 +174,22 @@ local function install_wow_stubs()
     end
 end
 
+-- Shared restore-cache shape builders, used by any spec that calls
+-- ActionResolver.PickupToCursor / Restorer:ApplyProfile / ClickBindings:Apply
+-- / MacroResolver:ResolveOrCreateMacro directly with a hand-built caches
+-- table instead of one produced by Restorer:ApplyProfile itself.
+
+-- Full shape expected by ActionResolver.PickupToCursor.
+function support.empty_restore_caches()
+    return { spell = {}, flyout = {}, macroBody = {}, macroName = {}, macroID = {} }
+end
+
+-- Macro-only shape expected by MacroResolver:ResolveOrCreateMacro and
+-- ClickBindings:Apply, which never touch the spell/flyout caches.
+function support.empty_macro_caches()
+    return { macroBody = {}, macroName = {}, macroID = {} }
+end
+
 function support.load_addon(root)
     install_wow_stubs()
     SlotFiller = {}
@@ -190,6 +206,8 @@ function support.load_addon(root)
     load("Core/Strings.lua")
     load("Core/Text.lua")
     load("Core/Defaults.lua")
+    load("Core/Async.lua")
+    load("Core/Hooks.lua")
     load("Core/Normalizer.lua")
     load("Core/Context.lua")
     load("Core/State.lua")
@@ -200,16 +218,26 @@ function support.load_addon(root)
 end
 
 -- Loads the full addon including WoW-API-dependent modules. ActionAPI,
--- Scanner, and Restorer guard all WoW API calls so they run safely in a
--- plain Lua host.
+-- PetActionAPI, ClickBindingAPI, Scanner, and Restorer all guard their WoW
+-- API calls so they run safely in a plain Lua host.
 function support.load_full(root)
     support.load_addon(root)
+    -- ClearCursor is called on several unguarded code paths across
+    -- ActionAPI/Restorer/PetBar/ClickBindings; stub it once here instead of
+    -- in every spec file that loads the full addon.
+    _G.ClearCursor = _G.ClearCursor or function() end
     local function load(path)
         local chunk = assert(loadfile(root .. "/" .. path))
         chunk("SlotFiller", SlotFiller)
     end
     load("Core/ActionAPI.lua")
+    load("Core/SpellBookAPI.lua")
+    load("Core/PetActionAPI.lua")
+    load("Core/ClickBindingAPI.lua")
+    load("Core/MacroResolver.lua")
     load("Core/ActionResolver.lua")
+    load("Core/PetBar.lua")
+    load("Core/ClickBindings.lua")
     load("Core/Scanner.lua")
     load("Core/Restorer.lua")
 end

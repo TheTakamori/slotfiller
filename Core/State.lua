@@ -24,14 +24,27 @@ local function copyDefaults(defaults, target)
     return target
 end
 
+-- Cached after the first call so every other accessor below (most of which
+-- run on hot paths like dropdown rebuilds) doesn't re-walk the full defaults
+-- tree via copyDefaults on every call. Safe for the addon's lifetime: WoW
+-- populates _G[SAVED_VARIABLES] once, before ADDON_LOADED fires, and nothing
+-- in this addon ever replaces that table's identity afterward.
+local cachedDB = nil
+local cachedKnownCharacters = nil
+
 function SlotFiller.State:GetDB()
-    _G[Constants.SAVED_VARIABLES] = copyDefaults(Defaults.Get(), _G[Constants.SAVED_VARIABLES] or {})
-    return _G[Constants.SAVED_VARIABLES]
+    if cachedDB == nil then
+        cachedDB = copyDefaults(Defaults.Get(), _G[Constants.SAVED_VARIABLES] or {})
+        _G[Constants.SAVED_VARIABLES] = cachedDB
+    end
+    return cachedDB
 end
 
 function SlotFiller.State:ResetForTests()
-    _G[Constants.SAVED_VARIABLES] = copyDefaults(Defaults.Get(), {})
-    return _G[Constants.SAVED_VARIABLES]
+    cachedDB = copyDefaults(Defaults.Get(), {})
+    cachedKnownCharacters = nil
+    _G[Constants.SAVED_VARIABLES] = cachedDB
+    return cachedDB
 end
 
 function SlotFiller.State:GetMinimapSettings()
@@ -48,16 +61,30 @@ end
 
 function SlotFiller.State:TrackCharacter(nameRealm, classFile, classID)
     self:GetKnownCharactersTable()[nameRealm] = { file = classFile, classID = classID }
+    cachedKnownCharacters = nil
 end
 
+-- Rebuilds and sorts the character list lazily; cached until the next
+-- TrackCharacter call invalidates it. Avoids re-allocating and re-sorting on
+-- every dropdown-menu open, which previously happened on every call.
 function SlotFiller.State:GetKnownCharacters()
-    local t = self:GetKnownCharactersTable()
-    local list = {}
-    for key, info in pairs(t) do
-        list[#list + 1] = { key = key, file = info.file, classID = info.classID }
+    if cachedKnownCharacters == nil then
+        local t = self:GetKnownCharactersTable()
+        local list = {}
+        for key, info in pairs(t) do
+            list[#list + 1] = { key = key, file = info.file, classID = info.classID }
+        end
+        table.sort(list, function(a, b) return a.key < b.key end)
+        cachedKnownCharacters = list
     end
-    table.sort(list, function(a, b) return a.key < b.key end)
-    return list
+    return cachedKnownCharacters
+end
+
+-- Returns a copy of the array `t` (or a new empty array when `t` is nil).
+local function copyArray(t)
+    local copy = {}
+    for i, v in ipairs(t or {}) do copy[i] = v end
+    return copy
 end
 
 function SlotFiller.State:GetProfileAutoLoad(profileName)
@@ -65,11 +92,15 @@ function SlotFiller.State:GetProfileAutoLoad(profileName)
     if not profile then return defaultAutoLoad() end
     local al = profile.autoLoad
     if not al then return defaultAutoLoad() end
+    -- Always return independent copies of the saved arrays: callers (e.g. the
+    -- profile manager's filter dropdowns) treat the result as a free-standing
+    -- snapshot to mutate locally, and mutating a live reference here would
+    -- silently corrupt SavedVariables outside of SetProfileAutoLoad.
     return {
         enabled    = al.enabled == true,
-        characters = al.characters or {},
-        classes    = al.classes    or {},
-        specs      = al.specs      or {},
+        characters = copyArray(al.characters),
+        classes    = copyArray(al.classes),
+        specs      = copyArray(al.specs),
     }
 end
 

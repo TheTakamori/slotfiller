@@ -5,18 +5,20 @@ local Strings = SlotFiller.Strings
 
 SlotFiller.Normalizer = {}
 
+local MacroEscape = Constants.MACRO_ESCAPE
+
 function SlotFiller.Normalizer.CompressMacroText(text)
     text = text or ""
-    text = text:gsub("\n", "/n")
-    text = text:gsub("/n$", "")
-    text = text:gsub("||", "/124")
+    text = text:gsub("\n", MacroEscape.NEWLINE)
+    text = text:gsub(MacroEscape.NEWLINE .. "$", "")
+    text = text:gsub("||", MacroEscape.PIPE)
     return Strings.Trim(text)
 end
 
 function SlotFiller.Normalizer.UncompressMacroText(text)
     text = text or ""
-    text = text:gsub("/n", "\n")
-    text = text:gsub("/124", "|")
+    text = text:gsub(MacroEscape.NEWLINE, "\n")
+    text = text:gsub(MacroEscape.PIPE, "|")
     return Strings.Trim(text)
 end
 
@@ -46,7 +48,10 @@ function SlotFiller.Normalizer.FromRaw(raw)
         -- Preserve any native WoW type we don't explicitly handle so it can be
         -- attempted on restore (e.g. new Midnight action types such as mounts
         -- or SBA rotation buttons that surface under an unexpected type string).
-        if not actionType or actionType == "" then
+        -- NOTE: this guard is reachable — the `not raw.type` check above only
+        -- rejects nil/false; an empty string "" is truthy in Lua and falls
+        -- through to here, where IsSupportedActionType("") is also false.
+        if actionType == "" then
             return nil
         end
         return {
@@ -107,9 +112,77 @@ function SlotFiller.Normalizer.FromRaw(raw)
     elseif actionType == Constants.ACTION_TYPE.EQUIPMENTSET then
         slot.id = raw.id
         slot.name = raw.name
+    elseif actionType == Constants.ACTION_TYPE.OUTFIT then
+        slot.id = raw.id
+        slot.name = raw.name
     end
 
     return slot
+end
+
+-- ---------------------------------------------------------------------------
+-- Pet action bar
+-- ---------------------------------------------------------------------------
+
+-- raw is { token = string } for a pet command token, or { spellID = number }
+-- for a pet ability. Returns nil for anything else (e.g. an empty slot).
+function SlotFiller.Normalizer.FromRawPetSlot(raw)
+    if not raw then
+        return nil
+    end
+    if raw.token then
+        return { type = Constants.PET_SLOT_TYPE.TOKEN, token = raw.token }
+    end
+    if raw.spellID then
+        return { type = Constants.PET_SLOT_TYPE.SPELL, spellID = raw.spellID }
+    end
+    return nil
+end
+
+function SlotFiller.Normalizer.BuildPetProfile(petSlotsByIndex)
+    local petSlots = {}
+    for index = Constants.PET_SLOT_MIN, Constants.PET_SLOT_MAX do
+        if petSlotsByIndex[index] then
+            petSlots[index] = petSlotsByIndex[index]
+        end
+    end
+    return petSlots
+end
+
+-- ---------------------------------------------------------------------------
+-- Click bindings
+-- ---------------------------------------------------------------------------
+
+-- raw fields: bindingType, button, modifiers, actionID (non-macro types), and
+-- macroName/macroBody/macroIcon (macro type only, captured by Scanner since a
+-- raw macro index isn't stable across characters). Returns nil when there is
+-- nothing stable to restore (e.g. a macro binding whose macro lookup failed).
+function SlotFiller.Normalizer.FromRawClickBinding(raw)
+    if not raw or raw.bindingType == nil or not raw.button then
+        return nil
+    end
+
+    if raw.isMacro then
+        if not raw.macroName then
+            return nil
+        end
+        return {
+            bindingType = raw.bindingType,
+            button      = raw.button,
+            modifiers   = raw.modifiers or 0,
+            isMacro     = true,
+            macroName   = raw.macroName,
+            macroBody   = raw.macroBody,
+            macroIcon   = raw.macroIcon,
+        }
+    end
+
+    return {
+        bindingType = raw.bindingType,
+        button      = raw.button,
+        modifiers   = raw.modifiers or 0,
+        actionID    = raw.actionID,
+    }
 end
 
 function SlotFiller.Normalizer.BuildProfile(slotsByIndex)
@@ -154,6 +227,20 @@ function SlotFiller.Normalizer.CloneProfile(profile)
     }
     for slotIndex, slot in pairs((profile and profile.slots) or {}) do
         copy.slots[slotIndex] = SlotFiller.Normalizer.CloneSlot(slot)
+    end
+    -- Deep-copy petSlots/clickBindings (optional sub-tables) so Duplicate gives
+    -- the new profile independent copies, same reasoning as autoLoad below.
+    if profile and profile.petSlots then
+        copy.petSlots = {}
+        for index, slot in pairs(profile.petSlots) do
+            copy.petSlots[index] = SlotFiller.Normalizer.CloneSlot(slot)
+        end
+    end
+    if profile and profile.clickBindings then
+        copy.clickBindings = {}
+        for i, entry in ipairs(profile.clickBindings) do
+            copy.clickBindings[i] = SlotFiller.Normalizer.CloneSlot(entry)
+        end
     end
     -- Deep-copy the autoLoad config so Duplicate gives the new profile its own
     -- independent copy (mutations to one must not affect the other).

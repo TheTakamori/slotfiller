@@ -8,12 +8,22 @@ local events = CreateFrame(WoW.UI.FRAME)
 events:RegisterEvent(WoW.EVENT.ADDON_LOADED)
 events:RegisterEvent(WoW.EVENT.PLAYER_LOGIN)
 events:RegisterEvent(WoW.EVENT.PLAYER_SPECIALIZATION_CHANGED)
+events:RegisterEvent(WoW.EVENT.PLAYER_REGEN_ENABLED)
+
+-- Set when a delayed auto-load attempt found combat active and bailed out,
+-- so the PLAYER_REGEN_ENABLED handler below knows to retry once combat ends.
+-- Without this, a profile could simply never auto-load for the session if
+-- combat happened to overlap the post-login delay.
+local pendingAutoLoadRetry = false
 
 -- Resolves the best auto-load profile for the current context and loads it.
 -- If no profile has "Allow Profile Auto Load" enabled, nothing is loaded.
 local function triggerAutoLoad()
     local function apply()
-        if SlotFiller.Context.IsCombatLocked() then return end
+        if SlotFiller.Context.IsCombatLocked() then
+            pendingAutoLoadRetry = true
+            return
+        end
         local specName = SlotFiller.Context.GetSpecName()
         if not specName then return end
 
@@ -27,9 +37,7 @@ local function triggerAutoLoad()
 
         if profileName ~= SlotFiller.State:GetActiveProfileName() then
             SlotFiller.ProfileActions:Load(profileName)
-            if SlotFiller.UI.MainFrame.frame and SlotFiller.UI.MainFrame.frame:IsShown() then
-                SlotFiller.UI.MainFrame:Refresh()
-            end
+            SlotFiller.Hooks.NotifyStateChanged()
         end
     end
 
@@ -68,9 +76,15 @@ events:SetScript(WoW.UI.ON_EVENT, function(_, event, arg1)
     end
 
     if event == WoW.EVENT.PLAYER_SPECIALIZATION_CHANGED then
-        if SlotFiller.UI.MainFrame.frame and SlotFiller.UI.MainFrame.frame:IsShown() then
-            SlotFiller.UI.MainFrame:Refresh()
-        end
+        SlotFiller.Hooks.NotifyStateChanged()
         triggerAutoLoad()
+        return
+    end
+
+    if event == WoW.EVENT.PLAYER_REGEN_ENABLED then
+        if pendingAutoLoadRetry then
+            pendingAutoLoadRetry = false
+            triggerAutoLoad()
+        end
     end
 end)

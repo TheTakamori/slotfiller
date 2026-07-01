@@ -88,6 +88,16 @@ runner:test("FromRaw normalises all action types", function()
     support.assert.equal(pet.type, "summonpet",                "summonpet type")
     support.assert.equal(pet.id,   "BattlePet-0-00000B4B64D9", "summonpet id (GUID)")
     support.assert.equal(pet.name, "Wee Stinker",              "summonpet name")
+
+    -- outfit
+    local outfit = N.FromRaw({ type = "outfit", id = 42, name = "Tank Set" })
+    support.assert.equal(outfit.type, "outfit",    "outfit type")
+    support.assert.equal(outfit.id,   42,           "outfit id")
+    support.assert.equal(outfit.name, "Tank Set",   "outfit name")
+end)
+
+runner:test("IsSupportedActionType recognises outfit", function()
+    support.assert.equal(N.IsSupportedActionType(C.ACTION_TYPE.OUTFIT), true, "outfit supported")
 end)
 
 runner:test("FromRaw returns nil for invalid inputs", function()
@@ -192,6 +202,106 @@ runner:test("FromRaw stores nil icon when scanner provides none", function()
         name = "NoIcon", body = "/cast Fire",
     })
     support.assert.isNil(slot.icon, "icon is nil when raw.icon absent")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Pet action bar
+-- ---------------------------------------------------------------------------
+
+runner:test("FromRawPetSlot normalises a token", function()
+    local slot = N.FromRawPetSlot({ token = "PET_ACTION_ATTACK" })
+    support.assert.equal(slot.type,  C.PET_SLOT_TYPE.TOKEN, "token type")
+    support.assert.equal(slot.token, "PET_ACTION_ATTACK",   "token name stored")
+end)
+
+runner:test("FromRawPetSlot normalises a spell", function()
+    local slot = N.FromRawPetSlot({ spellID = 17253 })
+    support.assert.equal(slot.type,    C.PET_SLOT_TYPE.SPELL, "spell type")
+    support.assert.equal(slot.spellID, 17253,                 "spellID stored")
+end)
+
+runner:test("FromRawPetSlot returns nil for empty input", function()
+    support.assert.isNil(N.FromRawPetSlot(nil),  "nil raw")
+    support.assert.isNil(N.FromRawPetSlot({}),   "no token or spellID")
+end)
+
+runner:test("BuildPetProfile keeps only slots within the pet bar range", function()
+    local petSlots = N.BuildPetProfile({
+        [1]  = { type = "token", token = "PET_ACTION_ATTACK" },
+        [10] = { type = "spell", spellID = 1 },
+        [99] = { type = "spell", spellID = 2 },
+    })
+    support.assert.equal(petSlots[1].token,   "PET_ACTION_ATTACK", "slot 1 kept")
+    support.assert.equal(petSlots[10].spellID, 1,                  "slot 10 kept")
+    support.assert.isNil(petSlots[99],                              "out-of-range slot dropped")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Click bindings
+-- ---------------------------------------------------------------------------
+
+runner:test("FromRawClickBinding normalises a non-macro binding", function()
+    local entry = N.FromRawClickBinding({
+        bindingType = 1, button = "RightButton", modifiers = 0, actionID = 133,
+    })
+    support.assert.equal(entry.bindingType, 1,             "bindingType stored")
+    support.assert.equal(entry.button,      "RightButton", "button stored")
+    support.assert.equal(entry.actionID,    133,            "actionID stored")
+    support.assert.isNil(entry.isMacro,                     "isMacro absent for non-macro binding")
+end)
+
+runner:test("FromRawClickBinding normalises a macro binding", function()
+    local entry = N.FromRawClickBinding({
+        bindingType = 2, button = "Button4", modifiers = 1,
+        isMacro = true, macroName = "Heal", macroBody = "/cast Heal", macroIcon = 1,
+    })
+    support.assert.equal(entry.isMacro,   true,         "isMacro stored")
+    support.assert.equal(entry.macroName, "Heal",       "macroName stored")
+    support.assert.equal(entry.macroBody, "/cast Heal", "macroBody stored")
+end)
+
+runner:test("FromRawClickBinding returns nil for a macro binding with no resolved macro", function()
+    local entry = N.FromRawClickBinding({
+        bindingType = 2, button = "Button4", modifiers = 0, isMacro = true,
+    })
+    support.assert.isNil(entry, "no stable data to restore without a macro name")
+end)
+
+runner:test("FromRawClickBinding returns nil for invalid input", function()
+    support.assert.isNil(N.FromRawClickBinding(nil),                          "nil raw")
+    support.assert.isNil(N.FromRawClickBinding({ bindingType = 1 }),          "missing button")
+end)
+
+-- ---------------------------------------------------------------------------
+-- CloneProfile: petSlots / clickBindings
+-- ---------------------------------------------------------------------------
+
+runner:test("CloneProfile deep-copies petSlots independently", function()
+    local original = {
+        savedAt = 1,
+        slots = {},
+        petSlots = { [1] = { type = "spell", spellID = 5 } },
+    }
+    local copy = N.CloneProfile(original)
+    copy.petSlots[1].spellID = 999
+    support.assert.equal(original.petSlots[1].spellID, 5, "original petSlots unaffected by copy mutation")
+end)
+
+runner:test("CloneProfile deep-copies clickBindings independently", function()
+    local original = {
+        savedAt = 1,
+        slots = {},
+        clickBindings = { { bindingType = 1, button = "Button4", actionID = 7 } },
+    }
+    local copy = N.CloneProfile(original)
+    copy.clickBindings[1].actionID = 999
+    support.assert.equal(original.clickBindings[1].actionID, 7, "original clickBindings unaffected by copy mutation")
+end)
+
+runner:test("CloneProfile omits petSlots/clickBindings when source has none", function()
+    local copy = N.CloneProfile({ savedAt = 1, slots = {} })
+    support.assert.isNil(copy.petSlots,      "no petSlots when source has none")
+    support.assert.isNil(copy.clickBindings, "no clickBindings when source has none")
 end)
 
 os.exit(runner:run())

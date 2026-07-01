@@ -68,15 +68,19 @@ function SlotFiller.AutoLoad.FindBestProfile(characterKey, classFile, specName)
 
     local pool = #charMatched > 0 and charMatched or candidates
 
-    local bestName  = nil
-    local bestScore = -1
+    -- Score every candidate, then sort by score (desc) and name (asc) so the
+    -- winner is deterministic even when two profiles tie — pairs() iteration
+    -- order above is otherwise unspecified, which would make a tied result
+    -- flicker between profiles across sessions.
     for _, c in ipairs(pool) do
-        local s = scoreCandidate(c.autoLoad, classFile, specName)
-        if s > bestScore then
-            bestScore = s
-            bestName  = c.name
-        end
+        c.score = scoreCandidate(c.autoLoad, classFile, specName)
     end
+    table.sort(pool, function(a, b)
+        if a.score ~= b.score then
+            return a.score > b.score
+        end
+        return a.name < b.name
+    end)
 
-    return bestName
+    return pool[1] and pool[1].name or nil
 end

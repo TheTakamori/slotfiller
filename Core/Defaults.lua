@@ -8,7 +8,7 @@ function SlotFiller.Defaults.Get()
     return {
         version = Constants.DB_VERSION,
         minimap = {
-            angle = 220,
+            angle = Constants.MINIMAP.DEFAULT_ANGLE,
             hidden = false,
         },
         profiles = {},

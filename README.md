@@ -8,7 +8,7 @@ slot.
 Profiles are account-wide. Any profile saved on one character is available on
 every other character on the account.
 
-Current version: `1.1.0`.
+Current version: `1.3.0`.
 
 Target: WoW Retail `12.0.7 (Midnight)`.
 
@@ -16,7 +16,12 @@ Target: WoW Retail `12.0.7 (Midnight)`.
 
 - Save all action bar slots as a named profile (main bars, class bonus bars,
   Skyriding bar, and extra bars — slots 1–180).
-- Load profiles with `/sfill <name>` so they can be used in macros.
+- Saves and restores Transmog Outfit buttons, the pet action bar (pet
+  abilities; pet command tokens like Attack/Follow/Stay are left untouched),
+  and Click Bindings (click-cast spells, items, and macros).
+- Normalizes talent-overridden spells to their base spell ID when saving, so
+  a profile keeps working after a talent or spec change.
+- Load a profile directly with `/sfill <name>`.
 - Manage profiles from a minimap button or `/sfill`: save, load, update,
   rename, duplicate, and delete.
 - Assign auto-load rules per profile using character, class, and spec
@@ -81,7 +86,13 @@ development via the `.toc` but are stripped from release builds by
 - The Rotation Assistant (SBA) button can be moved between slots but cannot
   be created from scratch (a Blizzard limitation). Keep an SBA button on every
   profile if you mix SBA and non-SBA layouts.
-- Right-click the minimap button to open the profile manager.
+- Pet command tokens (Attack, Follow, Stay, and similar) are never relocated
+  on load — only pet abilities are restored. Reordering tokens risks losing
+  one permanently with no way to recover it, so the addon leaves them exactly
+  where they currently are, the same trade-off it makes for the SBA button.
+- Click Bindings are restored additively: a profile saved with none never
+  clears bindings already set on the character loading it.
+- Click the minimap button to open the profile manager.
 
 ## License
 

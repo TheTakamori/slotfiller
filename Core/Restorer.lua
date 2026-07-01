@@ -2,6 +2,7 @@ local _, SlotFiller = ...
 
 local Constants = SlotFiller.Constants
 local ActionAPI = SlotFiller.ActionAPI
+local SpellBookAPI = SlotFiller.SpellBookAPI
 local Text = SlotFiller.Text
 
 SlotFiller.Restorer = {
@@ -45,54 +46,6 @@ local function findAllAssistedCombatSlots()
         end
     end
     return slots
-end
-
-function SlotFiller.Restorer:BuildMacroCache()
-    local bodyCache = {}
-    local nameCache = {}
-    local idCache = {}
-    local blacklist = {}
-    local maxMacros = (MAX_ACCOUNT_MACROS or 120) + (MAX_CHARACTER_MACROS or 0)
-
-    if not GetMacroInfo then
-        return bodyCache, nameCache, idCache
-    end
-
-    for macroID = 1, maxMacros do
-        local name, _, body = GetMacroInfo(macroID)
-        if name and body then
-            idCache[macroID] = macroID
-            local compressedBody = SlotFiller.Normalizer.CompressMacroText(body)
-            bodyCache[compressedBody] = macroID
-            if nameCache[name] then
-                blacklist[name] = true
-                nameCache[name] = nil  -- ambiguous: drop the earlier entry too
-            elseif not blacklist[name] then
-                nameCache[name] = macroID
-            end
-        end
-    end
-
-    return bodyCache, nameCache, idCache
-end
-
-function SlotFiller.Restorer:FindMacroID(slot, bodyCache, nameCache, idCache)
-    if slot.macroID and idCache[slot.macroID] and GetMacroInfo then
-        local name, _, body = GetMacroInfo(slot.macroID)
-        if body then
-            local compressedBody = SlotFiller.Normalizer.CompressMacroText(body)
-            if (not slot.body or slot.body == compressedBody) and (not slot.name or slot.name == name) then
-                return slot.macroID
-            end
-        end
-    end
-    if slot.body and bodyCache[slot.body] then
-        return bodyCache[slot.body]
-    end
-    if slot.name and nameCache[slot.name] then
-        return nameCache[slot.name]
-    end
-    return nil
 end
 
 -- Restores an Assisted Combat (SBA) button to actionID.
@@ -184,10 +137,10 @@ function SlotFiller.Restorer:ApplyProfile(profile)
         SetCVar("Sound_EnableAllSound", "0")
     end
 
-    local macroBodyCache, macroNameCache, macroIDCache = self:BuildMacroCache()
+    local macroBodyCache, macroNameCache, macroIDCache = SlotFiller.MacroResolver:BuildMacroCache()
     local caches = {
-        spell     = ActionAPI.BuildSpellBookCache(),
-        flyout    = ActionAPI.BuildFlyoutBookCache(),
+        spell     = SpellBookAPI.BuildSpellBookCache(),
+        flyout    = SpellBookAPI.BuildFlyoutBookCache(),
         macroBody = macroBodyCache,
         macroName = macroNameCache,
         macroID   = macroIDCache,
@@ -222,6 +175,9 @@ function SlotFiller.Restorer:ApplyProfile(profile)
             if sbaTargetSet[actionID] then
                 self:RestoreSBASlot(actionID, spareSBASlots)
             end
+            if actionID % Constants.ASYNC_YIELD_BATCH == 0 then
+                SlotFiller.Async.MaybeYield()
+            end
         end
     end
 
@@ -229,6 +185,19 @@ function SlotFiller.Restorer:ApplyProfile(profile)
     for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
         if not sbaTargetSet[actionID] then
             self:RestoreSlot(actionID, profile.slots[actionID], caches)
+        end
+        if actionID % Constants.ASYNC_YIELD_BATCH == 0 then
+            SlotFiller.Async.MaybeYield()
+        end
+    end
+
+    if profile.petSlots then
+        SlotFiller.PetBar:Apply(profile.petSlots)
+    end
+
+    if profile.clickBindings then
+        for _, message in ipairs(SlotFiller.ClickBindings:Apply(profile.clickBindings, caches)) do
+            addError(self, message)
         end
     end
 

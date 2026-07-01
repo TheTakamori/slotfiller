@@ -24,7 +24,8 @@ SlotFiller.Text = {
     RESTORE_CLEAN = "Loaded profile %s.",
     RESTORE_CORRUPT = "Profile %s could not be loaded. The saved data appears corrupt or incomplete.",
     RESTORE_ZONE_ABILITY_FAILED = "Zone ability in slot %d could not be restored. Enter a Draenor zone and reload the profile.",
-    RESTORE_MACRO_LIMIT = "Cannot recreate character macro '%s' in slot %d: the 18 character macro limit is full.",
+    RESTORE_MACRO_LIMIT = "Cannot recreate character macro '%s' in slot %d: the "
+        .. Constants.MAX_CHARACTER_MACROS_FALLBACK .. " character macro limit is full.",
     RESTORE_MACRO_CREATE_FAILED = "Cannot recreate character macro '%s' in slot %d: macro creation failed.",
     RESTORE_ITEM_FAILED = "Unable to restore item %s to slot %d.",
     RESTORE_MACRO_FAILED = "Unable to restore macro %s to slot %d.",
@@ -33,7 +34,11 @@ SlotFiller.Text = {
     RESTORE_PET_FAILED = "Unable to restore battle pet %s to slot %d. The pet may not be in your collection.",
     RESTORE_COMPANION_FAILED = "Unable to restore companion (id=%s, sub=%s) to slot %d.",
     RESTORE_EQUIPSET_FAILED = "Unable to restore equipment set %s to slot %d.",
+    RESTORE_OUTFIT_FAILED = "Unable to restore outfit %s to slot %d.",
     RESTORE_UNKNOWN_TYPE = "Cannot restore action type '%s' in slot %d. Use /sfill scan for details.",
+    RESTORE_CLICKBINDING_MACRO_LIMIT = "Cannot recreate click-cast macro '%s': the "
+        .. Constants.MAX_CHARACTER_MACROS_FALLBACK .. " character macro limit is full.",
+    RESTORE_CLICKBINDING_MACRO_FAILED = "Cannot restore click-cast macro '%s' for a click binding.",
     RESTORE_SBA_NO_SOURCE = "Cannot restore Assisted Combat button to slot %d. No Rotation Assistant button was found on your action bars — drag one from the spellbook to any bar, then reload the profile.",
     RESTORE_SBA_API_MISSING = "Cannot restore Assisted Combat button to slot %d. PickupAction unavailable.",
     RESTORE_SBA_PICKUP_FAILED = "Cannot restore Assisted Combat button to slot %d. Pickup from source slot %d failed.",
@@ -82,7 +87,7 @@ SlotFiller.Text = {
     UI_SBA_HINT = "SlotFiller can move an existing Rotation Assistant (SBA) button between slots, but cannot create one from scratch — this is a known Blizzard limitation.\n\nThis only matters if you switch between profiles where one has an SBA button and one does not. If no SBA button is present on any bar when loading, it cannot be placed.\n\nFix: keep an SBA button somewhere on every profile (even off-screen), so it is always available to move. Note: macros containing SBA functionality are not affected — SlotFiller handles those normally.",
 
     MINIMAP_TOOLTIP_TITLE = Constants.ADDON_TITLE,
-    MINIMAP_TOOLTIP_OPEN = "Left-click to open profiles.",
+    MINIMAP_TOOLTIP_OPEN = "Click to open profiles.",
     MINIMAP_TOOLTIP_TOGGLE = "Use " .. Constants.SLASH_COMMAND .. " minimap to show or hide this button.",
     MINIMAP_TOOLTIP_DRAG = "Drag to move this button.",
     MINIMAP_SHOWN = "Minimap button shown.",

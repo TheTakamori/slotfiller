@@ -29,7 +29,7 @@ local minimapShapes = {
 }
 
 local function normalizeAngle(angle)
-    angle = tonumber(angle) or 220
+    angle = tonumber(angle) or MinimapLayout.DEFAULT_ANGLE
     angle = math.fmod(angle, 360)
     if angle < 0 then
         angle = angle + 360
@@ -80,8 +80,8 @@ local function setButtonAngle(button, angle)
         x = x * widthRadius
         y = y * heightRadius
     else
-        local diagonalWidth = math.sqrt(2 * (widthRadius ^ 2)) - 10
-        local diagonalHeight = math.sqrt(2 * (heightRadius ^ 2)) - 10
+        local diagonalWidth = math.sqrt(2 * (widthRadius ^ 2)) - MinimapLayout.DIAGONAL_INSET
+        local diagonalHeight = math.sqrt(2 * (heightRadius ^ 2)) - MinimapLayout.DIAGONAL_INSET
         x = math.max(-widthRadius, math.min(x * diagonalWidth, widthRadius))
         y = math.max(-heightRadius, math.min(y * diagonalHeight, heightRadius))
     end
@@ -101,7 +101,7 @@ local function updateDragPosition(button)
     if button.dragStartX and button.dragStartY then
         local deltaX = cursorX - button.dragStartX
         local deltaY = cursorY - button.dragStartY
-        if (deltaX * deltaX) + (deltaY * deltaY) > 4 then
+        if (deltaX * deltaX) + (deltaY * deltaY) > MinimapLayout.DRAG_THRESHOLD_SQ then
             button.dragMoved = true
         end
     end

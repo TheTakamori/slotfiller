@@ -128,15 +128,9 @@ function SlotFiller.UI.SlashCommands:Handle(message)
     end
 
     if verb == Constants.COMMAND.SCAN then
-        local count = 0
-        for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
-            local actionType, id, subType, extraID = SlotFiller.ActionAPI.GetSlotActionInfo(actionID)
-            if actionType and actionType ~= "" then
-                count = count + 1
-                SlotFiller.Print(string.format("[%d] type=%s id=%s sub=%s extra=%s",
-                    actionID, tostring(actionType), tostring(id),
-                    tostring(subType), tostring(extraID)))
-            end
+        local lines, count = SlotFiller.Scanner:FormatSlotDump()
+        for _, line in ipairs(lines) do
+            SlotFiller.Print(line)
         end
         SlotFiller.Print(string.format("Scan complete: %d occupied slots.", count))
         return

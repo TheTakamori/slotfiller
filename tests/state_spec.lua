@@ -81,29 +81,9 @@ runner:test("ListProfileNames returns case-insensitive sorted order", function()
     support.assert.equal(names[3], "Zebra",  "Zebra last")
 end)
 
-runner:test("rename updates active profile tracking", function()
-    SlotFiller.State:ResetForTests()
-    SlotFiller.State:SetProfile("Old", { savedAt = 1, slots = {} })
-    SlotFiller.State:SetActiveProfile("Old")
-
-    local ok, _ = SlotFiller.State:RenameProfile("Old", "New")
-    support.assert.equal(ok, true, "rename succeeded")
-    support.assert.equal(SlotFiller.State:GetActiveProfileName(), "New", "active updated to new name")
-end)
-
-runner:test("rename fails when source missing or target exists", function()
-    SlotFiller.State:ResetForTests()
-    SlotFiller.State:SetProfile("Existing", { savedAt = 1, slots = {} })
-
-    local ok1, r1 = SlotFiller.State:RenameProfile("Ghost", "Anything")
-    support.assert.equal(ok1, false, "rename missing source fails")
-    support.assert.equal(r1, "missing", "reason: missing")
-
-    SlotFiller.State:SetProfile("Source", { savedAt = 2, slots = {} })
-    local ok2, r2 = SlotFiller.State:RenameProfile("Source", "Existing")
-    support.assert.equal(ok2, false, "rename to existing name fails")
-    support.assert.equal(r2, "exists", "reason: exists")
-end)
+-- (Active-profile-tracking and missing/exists reason-code cases for rename
+-- are covered by the dedicated "── RenameProfile ──" block below, rather
+-- than duplicated here.)
 
 runner:test("minimap hidden state persists and defaults to false", function()
     SlotFiller.State:ResetForTests()
@@ -120,6 +100,41 @@ runner:test("minimap angle persists and defaults to Constants default", function
     support.assert.equal(SlotFiller.State:GetMinimapAngle(), defaultAngle, "default angle matches Defaults")
     SlotFiller.State:SetMinimapAngle(135)
     support.assert.equal(SlotFiller.State:GetMinimapAngle(), 135, "angle stored correctly")
+end)
+
+-- ── GetDB caching ──────────────────────────────────────────────────────────
+
+runner:test("GetDB merges defaults once and returns the same table on later calls", function()
+    SlotFiller.State:ResetForTests()
+    local first = SlotFiller.State:GetDB()
+    first.profiles.Sentinel = { savedAt = 1, slots = {} }
+
+    local second = SlotFiller.State:GetDB()
+    support.assert.isTrue(second == first, "GetDB returns the same cached table identity")
+    support.assert.equal(second.profiles.Sentinel.savedAt, 1,
+        "mutations through one GetDB() call are visible through a later call")
+end)
+
+-- ── GetKnownCharacters caching ─────────────────────────────────────────────
+
+runner:test("GetKnownCharacters caches the sorted list across calls", function()
+    SlotFiller.State:ResetForTests()
+    SlotFiller.State:TrackCharacter("Bob-Realm", "PALADIN", 2)
+
+    local first  = SlotFiller.State:GetKnownCharacters()
+    local second = SlotFiller.State:GetKnownCharacters()
+    support.assert.isTrue(first == second, "same cached list returned until invalidated")
+end)
+
+runner:test("TrackCharacter invalidates the GetKnownCharacters cache", function()
+    SlotFiller.State:ResetForTests()
+    SlotFiller.State:TrackCharacter("Bob-Realm", "PALADIN", 2)
+    local before = SlotFiller.State:GetKnownCharacters()
+    support.assert.equal(#before, 1, "one character before tracking a second")
+
+    SlotFiller.State:TrackCharacter("Eve-Realm", "WARLOCK", 9)
+    local after = SlotFiller.State:GetKnownCharacters()
+    support.assert.equal(#after, 2, "newly tracked character appears after invalidation")
 end)
 
 runner:test("TrackCharacter stores and GetKnownCharacters returns sorted list", function()
@@ -171,6 +186,21 @@ runner:test("GetProfileAutoLoad default tables are independent for a profile wit
     local second = SlotFiller.State:GetProfileAutoLoad("NoAutoLoad")
     first.classes[#first.classes + 1] = "PALADIN"
     support.assert.same(second.classes, {}, "separate calls never share the same default table")
+end)
+
+runner:test("GetProfileAutoLoad returns independent copies, not live references, for a saved config", function()
+    SlotFiller.State:ResetForTests()
+    SlotFiller.State:SetProfile("MyProfile", { savedAt = 1, slots = {} })
+    SlotFiller.State:SetProfileAutoLoad("MyProfile", {
+        enabled = true, characters = { "Bob-Realm" }, classes = {}, specs = {},
+    })
+
+    local result = SlotFiller.State:GetProfileAutoLoad("MyProfile")
+    result.characters[#result.characters + 1] = "Mutated-Realm"
+
+    local fresh = SlotFiller.State:GetProfileAutoLoad("MyProfile")
+    support.assert.same(fresh.characters, { "Bob-Realm" },
+        "mutating a previous result must not corrupt the saved autoLoad config")
 end)
 
 runner:test("SetProfileAutoLoad and GetProfileAutoLoad roundtrip", function()

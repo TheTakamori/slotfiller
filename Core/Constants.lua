@@ -1,7 +1,7 @@
 local _, SlotFiller = ...
 
 SlotFiller.Constants = {
-    VERSION = "1.2.1",
+    VERSION = "1.3.0",
     ADDON_NAME = "SlotFiller",
     ADDON_TITLE = "Slot Filler",
     SAVED_VARIABLES = "SlotFillerDB",
@@ -11,6 +11,29 @@ SlotFiller.Constants = {
 
     MAX_PROFILE_NAME_LEN = 32,
     AUTOLOAD_DELAY_SEC   = 0.5,
+
+    -- Fallback values for Blizzard globals that may be unavailable on a given
+    -- client/build (e.g. the plain-Lua test host). Named here instead of
+    -- inlined as magic numbers at each call site.
+    MAX_ACCOUNT_MACROS_FALLBACK    = 120,
+    MAX_CHARACTER_MACROS_FALLBACK  = 18,
+    MAX_SKILLLINE_TABS_FALLBACK    = 8,
+    DEFAULT_MACRO_ICON             = "INV_MISC_QUESTIONMARK",
+    -- Enum.ClickBindingType.Macro's documented numeric value, used when the
+    -- Enum table itself is unavailable.
+    CLICK_BINDING_TYPE_MACRO_FALLBACK = 2,
+
+    -- How many iterations a heavy scan/restore loop processes between
+    -- cooperative yield points (see Core/Async.lua). One shared interval
+    -- keeps every loop's pacing consistent and avoids per-caller tuning.
+    ASYNC_YIELD_BATCH = 30,
+
+    -- Macro body escape tokens used to make a macro safely storable as a
+    -- single SavedVariables string (see Normalizer.CompressMacroText).
+    MACRO_ESCAPE = {
+        NEWLINE = "/n",
+        PIPE    = "/124",
+    },
 
     SLOT_MIN = 1,
     -- Full action-slot range:
@@ -28,6 +51,7 @@ SlotFiller.Constants = {
         FLYOUT = "flyout",
         COMPANION = "companion",
         EQUIPMENTSET = "equipmentset",
+        OUTFIT = "outfit",
         SUMMONMOUNT = "summonmount",
         SUMMONPET = "summonpet",
         -- Storage-only passthrough for native WoW types not explicitly handled above
@@ -39,6 +63,19 @@ SlotFiller.Constants = {
 
     ACTION_SUBTYPE = {
         ASSISTEDCOMBAT = "assistedcombat",
+    },
+
+    PET_SLOT_MIN = 1,
+    -- Mirrors Blizzard's NUM_PET_ACTION_SLOTS (10). Hardcoded rather than read
+    -- from the global so Constants.lua stays free of WoW-API load-order
+    -- assumptions; PetActionAPI re-checks the live global where it matters.
+    PET_SLOT_MAX = 10,
+
+    PET_SLOT_TYPE = {
+        -- Pet command tokens (Attack, Follow, Stay, etc.). Recorded so restore
+        -- can avoid disturbing them, but never relocated — see PetActionAPI.lua.
+        TOKEN = "token",
+        SPELL = "spell",
     },
 
     COMMAND = {
@@ -71,6 +108,13 @@ SlotFiller.Constants = {
         TEX_COORD_RIGHT = 0.92,
         TEX_COORD_TOP = 0.08,
         TEX_COORD_BOTTOM = 0.92,
+        DEFAULT_ANGLE = 220,
+        -- Inset subtracted from the diagonal placement radius so the button
+        -- doesn't visually clip past a square/cornered minimap shape.
+        DIAGONAL_INSET = 10,
+        -- Squared-pixel drag distance (in screen space) beyond which a
+        -- minimap-button click is treated as a drag rather than a click.
+        DRAG_THRESHOLD_SQ = 4,
     },
 
     TEXTURE = {
@@ -103,15 +147,31 @@ SlotFiller.Constants = {
         AUTOLOAD_CHECK_BOTTOM = 254,  -- "Allow Profile Auto Load" checkbox
         PROFILE_BOTTOM       = 292,
         DD_HEIGHT            = 22,
+        -- Action-row button widths.
+        BUTTON_WIDTH_SM = 72,
+        BUTTON_WIDTH_MD = 88,
+    },
+
+    COPY_FRAME = {
+        WIDTH  = 520,
+        HEIGHT = 380,
+        HINT_OFFSET_X    = 14,
+        HINT_OFFSET_Y    = -30,
+        SCROLL_INSET_TOP    = -50,
+        SCROLL_INSET_LEFT   = 8,
+        SCROLL_INSET_RIGHT  = -28,
+        SCROLL_INSET_BOTTOM = 8,
     },
 
     COLORS = {
-        BODY        = { 0.04, 0.04, 0.04, 0.92 },
-        BORDER      = { 0.22, 0.22, 0.22, 1 },
-        TEXT        = { 0.92, 0.92, 0.92, 1 },
-        MUTED       = { 0.68, 0.68, 0.68, 1 },
-        PLACEHOLDER = { 0.45, 0.45, 0.45, 1 },
-        WARNING     = { 1,    0.6,  0,    1 },
+        BODY            = { 0.04, 0.04, 0.04, 0.92 },
+        BORDER          = { 0.22, 0.22, 0.22, 1 },
+        TEXT            = { 0.92, 0.92, 0.92, 1 },
+        MUTED           = { 0.68, 0.68, 0.68, 1 },
+        PLACEHOLDER     = { 0.45, 0.45, 0.45, 1 },
+        WARNING         = { 1,    0.6,  0,    1 },
+        TOOLTIP_TITLE   = { 1,    1,    1,    1 },
+        TOOLTIP_BODY    = { 0.9,  0.9,  0.9,  1 },
     },
 }
 

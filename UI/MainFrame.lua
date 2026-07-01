@@ -5,11 +5,23 @@ local Text = SlotFiller.Text
 local Colors = Constants.COLORS
 local Frame = Constants.FRAME
 local Strings = SlotFiller.Strings
+local Widgets = SlotFiller.UI and SlotFiller.UI.Widgets
+local AutoLoadIndex = SlotFiller.AutoLoadIndex
 
 SlotFiller.UI = SlotFiller.UI or {}
 SlotFiller.UI.MainFrame = {}
 
 local MainFrame = SlotFiller.UI.MainFrame
+
+-- Refresh the panel whenever Core applies a change that could affect what it
+-- shows (auto-load fired, spec changed) — Core notifies via SlotFiller.Hooks
+-- instead of reaching into UI.MainFrame directly, so this file is the only
+-- place that knows the panel exists.
+SlotFiller.Hooks.RegisterStateChanged(function()
+    if MainFrame.frame and MainFrame.frame:IsShown() then
+        MainFrame:Refresh()
+    end
+end)
 
 -- ── Module-level dropdown-selection state ──────────────────────────────────
 -- These are the currently displayed auto-load filters for `selectedProfile`.
@@ -21,42 +33,6 @@ local selectedSpecs      = {}   -- set: "Retribution" → true
 
 -- ── Helpers ────────────────────────────────────────────────────────────────
 
-local function applyBackdrop(frame)
-    frame:SetBackdrop({
-        bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile     = true, tileSize = 32, edgeSize = 16,
-        insets   = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    frame:SetBackdropColor(Colors.BODY[1], Colors.BODY[2], Colors.BODY[3], Colors.BODY[4])
-    frame:SetBackdropBorderColor(Colors.BORDER[1], Colors.BORDER[2], Colors.BORDER[3], Colors.BORDER[4])
-end
-
-local function createLabel(parent, text, fontObject)
-    local label = parent:CreateFontString(nil, "OVERLAY", fontObject or "GameFontHighlight")
-    label:SetText(text or "")
-    label:SetTextColor(Colors.TEXT[1], Colors.TEXT[2], Colors.TEXT[3])
-    return label
-end
-
-local function createButton(parent, text, width)
-    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    button:SetSize(width or 72, 22)
-    button:SetText(text)
-    return button
-end
-
-local function getStaticPopupEditBox(dialog)
-    if not dialog then return nil end
-    return dialog.EditBox or dialog.editBox
-end
-
-local function getStaticPopupEditText(dialog)
-    local editBox = getStaticPopupEditBox(dialog)
-    if not editBox then return "" end
-    return Strings.Trim(editBox:GetText())
-end
-
 -- Returns a comma-separated summary of the keys in a selection set, or
 -- `Text.UI_AUTOLOAD_ANY` when nothing is selected.
 local function selectionSummary(selectionSet)
@@ -65,79 +41,6 @@ local function selectionSummary(selectionSet)
     if #items == 0 then return Text.UI_AUTOLOAD_ANY end
     table.sort(items)
     return table.concat(items, ", ")
-end
-
--- ── Auto-load selection helpers ────────────────────────────────────────────
-
--- Classes eligible for the Classes dropdown given the current char selection.
-local function getEligibleClasses()
-    if next(selectedChars) == nil then
-        return SlotFiller.Context.GetAllClasses()
-    end
-    local allClasses = SlotFiller.Context.GetAllClasses()
-    local classByFile = {}
-    for _, ci in ipairs(allClasses) do classByFile[ci.file] = ci end
-
-    local known  = SlotFiller.State:GetKnownCharacters()
-    local seen   = {}
-    local result = {}
-    for _, info in ipairs(known) do
-        if selectedChars[info.key] and not seen[info.file] then
-            seen[info.file] = true
-            local ci = classByFile[info.file]
-            if ci then result[#result + 1] = ci end
-        end
-    end
-    table.sort(result, function(a, b) return a.name < b.name end)
-    return result
-end
-
--- Specs eligible for the Specs dropdown given the current class selection.
-local function getEligibleSpecs()
-    local allClasses = SlotFiller.Context.GetAllClasses()
-    local classById  = {}
-    for _, ci in ipairs(allClasses) do classById[ci.file] = ci end
-
-    local classFiles = {}
-    for file in pairs(selectedClasses) do classFiles[#classFiles + 1] = file end
-    table.sort(classFiles)
-
-    local result = {}
-    for _, file in ipairs(classFiles) do
-        local ci = classById[file]
-        if ci then
-            for _, spec in ipairs(SlotFiller.Context.GetSpecsForClass(ci.id)) do
-                result[#result + 1] = {
-                    key   = spec.name,
-                    label = ci.name .. " — " .. spec.name,
-                }
-            end
-        end
-    end
-    return result
-end
-
-local function pruneInvalidClasses()
-    if next(selectedChars) == nil then return end
-    local eligible = getEligibleClasses()
-    local valid    = {}
-    for _, ci in ipairs(eligible) do valid[ci.file] = true end
-    for file in pairs(selectedClasses) do
-        if not valid[file] then selectedClasses[file] = nil end
-    end
-end
-
-local function pruneInvalidSpecs()
-    if next(selectedClasses) == nil then
-        for k in pairs(selectedSpecs) do selectedSpecs[k] = nil end
-        return
-    end
-    local eligible = getEligibleSpecs()
-    local valid    = {}
-    for _, s in ipairs(eligible) do valid[s.key] = true end
-    for key in pairs(selectedSpecs) do
-        if not valid[key] then selectedSpecs[key] = nil end
-    end
 end
 
 -- ── Dropdown setup ─────────────────────────────────────────────────────────
@@ -169,6 +72,14 @@ local function loadAutoLoadConfig(profileName)
     for _, v in ipairs(config.specs      or {}) do selectedSpecs[v]   = true end
 end
 
+-- Called when a profile popup (rename/duplicate/overwrite/delete) completes
+-- successfully. resultName is the profile's new selected name, or nil when
+-- the profile was deleted.
+local function onProfilePopupSuccess(resultName)
+    selectedProfile = resultName
+    MainFrame:Refresh()
+end
+
 -- SetupDropdownMenus must be called after all dropdown frames exist.
 function MainFrame:SetupDropdownMenus()
     local frame = self.frame
@@ -182,7 +93,7 @@ function MainFrame:SetupDropdownMenus()
     -- at open-time, so the menu is always up-to-date without re-registering.
 
     frame.specDropdown:SetupMenu(function(_, root)
-        local specs = getEligibleSpecs()
+        local specs = AutoLoadIndex.GetEligibleSpecs(selectedClasses)
         if #specs == 0 then
             root:CreateTitle(Text.UI_AUTOLOAD_ANY)
             return
@@ -203,7 +114,7 @@ function MainFrame:SetupDropdownMenus()
     end)
 
     frame.classDropdown:SetupMenu(function(_, root)
-        local classes = getEligibleClasses()
+        local classes = AutoLoadIndex.GetEligibleClasses(selectedChars)
         if #classes == 0 then
             root:CreateTitle(Text.UI_AUTOLOAD_ANY)
             return
@@ -216,7 +127,7 @@ function MainFrame:SetupDropdownMenus()
                 function()
                     if selectedClasses[file] then selectedClasses[file] = nil
                     else selectedClasses[file] = true end
-                    pruneInvalidSpecs()
+                    AutoLoadIndex.PruneInvalidSpecs(selectedClasses, selectedSpecs)
                     rebuildClassesText()
                     rebuildSpecsText()
                     saveCurrentAutoLoad()
@@ -239,8 +150,8 @@ function MainFrame:SetupDropdownMenus()
                 function()
                     if selectedChars[key] then selectedChars[key] = nil
                     else selectedChars[key] = true end
-                    pruneInvalidClasses()
-                    pruneInvalidSpecs()
+                    AutoLoadIndex.PruneInvalidClasses(selectedChars, selectedClasses)
+                    AutoLoadIndex.PruneInvalidSpecs(selectedClasses, selectedSpecs)
                     rebuildCharsText()
                     rebuildClassesText()
                     rebuildSpecsText()
@@ -406,21 +317,21 @@ function MainFrame:Ensure()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop",  frame.StopMovingOrSizing)
     frame:Hide()
-    applyBackdrop(frame)
+    Widgets.ApplyBackdrop(frame)
 
     -- ── Header ──
-    frame.title = createLabel(frame, Text.UI_TITLE, "GameFontNormalLarge")
+    frame.title = Widgets.CreateLabel(frame, Text.UI_TITLE, "GameFontNormalLarge")
     frame.title:SetPoint("TOP", frame, "TOP", 0, -16)
 
-    frame.specLabel = createLabel(frame, "")
+    frame.specLabel = Widgets.CreateLabel(frame, "")
     frame.specLabel:SetPoint("TOP", frame.title, "BOTTOM", 0, -8)
 
-    frame.activeLabel = createLabel(frame, "")
+    frame.activeLabel = Widgets.CreateLabel(frame, "")
     frame.activeLabel:SetPoint("TOP", frame.specLabel, "BOTTOM", 0, -4)
     frame.activeLabel:SetTextColor(Colors.MUTED[1], Colors.MUTED[2], Colors.MUTED[3])
 
     -- ── Footer ──
-    frame.versionLabel = createLabel(frame, "v" .. Constants.VERSION, "GameFontNormalSmall")
+    frame.versionLabel = Widgets.CreateLabel(frame, "v" .. Constants.VERSION, "GameFontNormalSmall")
     frame.versionLabel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 8)
     frame.versionLabel:SetTextColor(Colors.MUTED[1], Colors.MUTED[2], Colors.MUTED[3])
 
@@ -433,20 +344,10 @@ function MainFrame:Ensure()
     frame.sbaWarningLabel:SetPoint("BOTTOMLEFT", frame.sbaHover, "BOTTOMLEFT", 0, 0)
     frame.sbaWarningLabel:SetText(Text.UI_SBA_WARNING)
     frame.sbaWarningLabel:SetTextColor(Colors.WARNING[1], Colors.WARNING[2], Colors.WARNING[3], Colors.WARNING[4])
-    frame.sbaHover:SetScript("OnEnter", function(self)
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-        GameTooltip:ClearLines()
-        GameTooltip:AddLine(Text.UI_SBA_WARNING, Colors.WARNING[1], Colors.WARNING[2], Colors.WARNING[3])
-        GameTooltip:AddLine(Text.UI_SBA_HINT, 1, 1, 1, true)
-        GameTooltip:Show()
-    end)
-    frame.sbaHover:SetScript("OnLeave", function()
-        if GameTooltip then GameTooltip:Hide() end
-    end)
+    Widgets.AttachTooltip(frame.sbaHover, Text.UI_SBA_WARNING, Text.UI_SBA_HINT, Colors.WARNING)
 
     -- ── Profile dropdown ──
-    frame.profileLabel = createLabel(frame, Text.UI_PROFILE_LABEL, "GameFontNormalSmall")
+    frame.profileLabel = Widgets.CreateLabel(frame, Text.UI_PROFILE_LABEL, "GameFontNormalSmall")
     frame.profileLabel:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, Frame.PROFILE_BOTTOM + Frame.DD_HEIGHT + 4)
 
     frame.profileDropdown = CreateFrame("DropdownButton", "SlotFillerProfileDropdown", frame, "WowStyle1DropdownTemplate")
@@ -474,20 +375,10 @@ function MainFrame:Ensure()
     frame.autoLoadHover:SetPoint("RIGHT", frame.autoLoadCheckLabel, "RIGHT", 4, 0)
     frame.autoLoadHover:SetHeight(20)
     frame.autoLoadHover:EnableMouse(true)
-    frame.autoLoadHover:SetScript("OnEnter", function(self)
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-        GameTooltip:ClearLines()
-        GameTooltip:AddLine(Text.UI_AUTOLOAD_TITLE, 1, 1, 1)
-        GameTooltip:AddLine(Text.UI_AUTOLOAD_HINT, 0.9, 0.9, 0.9, true)
-        GameTooltip:Show()
-    end)
-    frame.autoLoadHover:SetScript("OnLeave", function()
-        if GameTooltip then GameTooltip:Hide() end
-    end)
+    Widgets.AttachTooltip(frame.autoLoadHover, Text.UI_AUTOLOAD_TITLE, Text.UI_AUTOLOAD_HINT)
 
     -- ── Characters dropdown ──
-    frame.charsLabel = createLabel(frame, Text.UI_CHARACTERS_LABEL, "GameFontNormalSmall")
+    frame.charsLabel = Widgets.CreateLabel(frame, Text.UI_CHARACTERS_LABEL, "GameFontNormalSmall")
     frame.charsLabel:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, Frame.CHARS_BOTTOM + Frame.DD_HEIGHT + 4)
 
     frame.charDropdown = CreateFrame("DropdownButton", "SlotFillerCharDropdown", frame, "WowStyle1FilterDropdownTemplate")
@@ -496,7 +387,7 @@ function MainFrame:Ensure()
     frame.charDropdown:SetText(Text.UI_AUTOLOAD_ANY)
 
     -- ── Classes dropdown ──
-    frame.classesLabel = createLabel(frame, Text.UI_CLASSES_LABEL, "GameFontNormalSmall")
+    frame.classesLabel = Widgets.CreateLabel(frame, Text.UI_CLASSES_LABEL, "GameFontNormalSmall")
     frame.classesLabel:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, Frame.CLASSES_BOTTOM + Frame.DD_HEIGHT + 4)
 
     frame.classDropdown = CreateFrame("DropdownButton", "SlotFillerClassDropdown", frame, "WowStyle1FilterDropdownTemplate")
@@ -505,7 +396,7 @@ function MainFrame:Ensure()
     frame.classDropdown:SetText(Text.UI_AUTOLOAD_ANY)
 
     -- ── Specs dropdown ──
-    frame.specsLabel = createLabel(frame, Text.UI_SPECS_LABEL, "GameFontNormalSmall")
+    frame.specsLabel = Widgets.CreateLabel(frame, Text.UI_SPECS_LABEL, "GameFontNormalSmall")
     frame.specsLabel:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, Frame.SPECS_BOTTOM + Frame.DD_HEIGHT + 4)
 
     frame.specDropdown = CreateFrame("DropdownButton", "SlotFillerSpecDropdown", frame, "WowStyle1FilterDropdownTemplate")
@@ -514,7 +405,7 @@ function MainFrame:Ensure()
     frame.specDropdown:SetText(Text.UI_AUTOLOAD_ANY)
 
     -- ── Action row 1 — Load / Overwrite / Rename ──
-    frame.loadButton = createButton(frame, Text.UI_LOAD, 72)
+    frame.loadButton = Widgets.CreateButton(frame, Text.UI_LOAD, Frame.BUTTON_WIDTH_SM)
     frame.loadButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, Frame.ACTION_ROW1_BOTTOM)
     frame.loadButton:SetScript("OnClick", function()
         if not selectedProfile or not SlotFiller.Context.RequireReady() then return end
@@ -523,113 +414,33 @@ function MainFrame:Ensure()
         end
     end)
 
-    frame.overwriteButton = createButton(frame, Text.UI_OVERWRITE, 88)
+    frame.overwriteButton = Widgets.CreateButton(frame, Text.UI_OVERWRITE, Frame.BUTTON_WIDTH_MD)
     frame.overwriteButton:SetPoint("LEFT", frame.loadButton, "RIGHT", 6, 0)
     frame.overwriteButton:SetScript("OnClick", function()
-        if not selectedProfile then return end
-        StaticPopupDialogs.SLOTFILLER_OVERWRITE = {
-            text = Text.UI_CONFIRM_OVERWRITE, button1 = YES, button2 = NO,
-            OnAccept = function(dialog)
-                local name = dialog.data
-                -- Flush any pending UI selections to State before the overwrite
-                -- operation reads existing.autoLoad from State, so deselections
-                -- made in the filter dropdowns are not silently discarded.
-                saveCurrentAutoLoad()
-                if SlotFiller.Context.RequireReady()
-                    and SlotFiller.ProfileActions:Overwrite(name) then
-                    MainFrame:Refresh()
-                end
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-        }
-        StaticPopup_Show("SLOTFILLER_OVERWRITE", selectedProfile, nil, selectedProfile)
+        -- Flush any pending UI selections to State before the overwrite
+        -- operation reads existing.autoLoad from State, so deselections made
+        -- in the filter dropdowns are not silently discarded.
+        saveCurrentAutoLoad()
+        SlotFiller.UI.ProfilePopups.ShowOverwrite(selectedProfile, onProfilePopupSuccess)
     end)
 
-    frame.renameButton = createButton(frame, Text.UI_RENAME, 72)
+    frame.renameButton = Widgets.CreateButton(frame, Text.UI_RENAME, Frame.BUTTON_WIDTH_SM)
     frame.renameButton:SetPoint("LEFT", frame.overwriteButton, "RIGHT", 6, 0)
     frame.renameButton:SetScript("OnClick", function()
-        if not selectedProfile then return end
-        local profileName = selectedProfile
-        StaticPopupDialogs.SLOTFILLER_RENAME = {
-            text = Text.UI_RENAME_PROMPT, button1 = ACCEPT, button2 = CANCEL,
-            hasEditBox = true, maxLetters = Constants.MAX_PROFILE_NAME_LEN,
-            OnAccept = function(dialog)
-                local oldName = dialog.data
-                local newName = getStaticPopupEditText(dialog)
-                if SlotFiller.Context.RequireReady()
-                    and SlotFiller.ProfileActions:Rename(oldName, newName) then
-                    selectedProfile = newName
-                    MainFrame:Refresh()
-                end
-            end,
-            EditBoxOnEnterPressed = function(editBox)
-                local dialog  = editBox:GetParent()
-                local oldName = (dialog and dialog.data) or profileName
-                local newName = Strings.Trim(editBox:GetText())
-                if SlotFiller.Context.RequireReady()
-                    and SlotFiller.ProfileActions:Rename(oldName, newName) then
-                    selectedProfile = newName
-                    MainFrame:Refresh()
-                end
-                if dialog then dialog:Hide() end
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-        }
-        StaticPopup_Show("SLOTFILLER_RENAME", profileName, nil, profileName)
+        SlotFiller.UI.ProfilePopups.ShowRename(selectedProfile, onProfilePopupSuccess)
     end)
 
     -- ── Action row 2 — Duplicate / Delete ──
-    frame.duplicateButton = createButton(frame, Text.UI_DUPLICATE, 88)
+    frame.duplicateButton = Widgets.CreateButton(frame, Text.UI_DUPLICATE, Frame.BUTTON_WIDTH_MD)
     frame.duplicateButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, Frame.ACTION_ROW2_BOTTOM)
     frame.duplicateButton:SetScript("OnClick", function()
-        if not selectedProfile then return end
-        local profileName = selectedProfile
-        StaticPopupDialogs.SLOTFILLER_DUPLICATE = {
-            text = Text.UI_DUPLICATE_PROMPT, button1 = ACCEPT, button2 = CANCEL,
-            hasEditBox = true, maxLetters = Constants.MAX_PROFILE_NAME_LEN,
-            OnAccept = function(dialog)
-                local sourceName = dialog.data
-                local newName    = getStaticPopupEditText(dialog)
-                if SlotFiller.Context.RequireReady()
-                    and SlotFiller.ProfileActions:Duplicate(sourceName, newName) then
-                    selectedProfile = newName
-                    MainFrame:Refresh()
-                end
-            end,
-            EditBoxOnEnterPressed = function(editBox)
-                local dialog     = editBox:GetParent()
-                local sourceName = (dialog and dialog.data) or profileName
-                local newName    = Strings.Trim(editBox:GetText())
-                if SlotFiller.Context.RequireReady()
-                    and SlotFiller.ProfileActions:Duplicate(sourceName, newName) then
-                    selectedProfile = newName
-                    MainFrame:Refresh()
-                end
-                if dialog then dialog:Hide() end
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-        }
-        StaticPopup_Show("SLOTFILLER_DUPLICATE", profileName, nil, profileName)
+        SlotFiller.UI.ProfilePopups.ShowDuplicate(selectedProfile, onProfilePopupSuccess)
     end)
 
-    frame.deleteButton = createButton(frame, Text.UI_DELETE, 72)
+    frame.deleteButton = Widgets.CreateButton(frame, Text.UI_DELETE, Frame.BUTTON_WIDTH_SM)
     frame.deleteButton:SetPoint("LEFT", frame.duplicateButton, "RIGHT", 6, 0)
     frame.deleteButton:SetScript("OnClick", function()
-        if not selectedProfile then return end
-        local profileName = selectedProfile
-        StaticPopupDialogs.SLOTFILLER_DELETE = {
-            text = Text.UI_CONFIRM_DELETE, button1 = YES, button2 = NO,
-            OnAccept = function(dialog)
-                local name = dialog.data
-                if SlotFiller.Context.RequireReady()
-                    and SlotFiller.ProfileActions:Delete(name) then
-                    selectedProfile = nil
-                    MainFrame:Refresh()
-                end
-            end,
-            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-        }
-        StaticPopup_Show("SLOTFILLER_DELETE", profileName, nil, profileName)
+        SlotFiller.UI.ProfilePopups.ShowDelete(selectedProfile, onProfilePopupSuccess)
     end)
 
     -- ── Save row ──
@@ -640,7 +451,7 @@ function MainFrame:Ensure()
     frame.saveBox:SetMaxLetters(Constants.MAX_PROFILE_NAME_LEN)
     self:SetupSaveBox(frame.saveBox)
 
-    frame.saveButton = createButton(frame, Text.UI_SAVE, Frame.SAVE_BUTTON_WIDTH)
+    frame.saveButton = Widgets.CreateButton(frame, Text.UI_SAVE, Frame.SAVE_BUTTON_WIDTH)
     frame.saveButton:SetPoint("LEFT", frame.saveBox, "RIGHT", 8, 0)
     frame.saveButton:SetScript("OnClick", function() MainFrame:SaveFromInput() end)
     frame.saveBox:SetScript("OnEnterPressed", function()
@@ -649,7 +460,7 @@ function MainFrame:Ensure()
     end)
     frame.saveBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
-    frame.closeButton = createButton(frame, Text.UI_CLOSE, Frame.CLOSE_BUTTON_WIDTH)
+    frame.closeButton = Widgets.CreateButton(frame, Text.UI_CLOSE, Frame.CLOSE_BUTTON_WIDTH)
     frame.closeButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, Frame.FOOTER_BOTTOM)
     frame.closeButton:SetScript("OnClick", function() frame:Hide() end)
 
@@ -666,11 +477,12 @@ end
 
 function MainFrame:Refresh()
     local frame = self:Ensure()
-    if not SlotFiller.Context.RequireReady() then return end
 
     local indexModel = SlotFiller.ProfileIndex.Build()
 
-    -- Build "Name-Realm · Class · Spec" info line.
+    -- Build "Name-Realm · Class · Spec" info line. Always updated, even when
+    -- RequireReady() below would fail, so the header never shows stale data
+    -- from a previous character while the panel is open.
     local specParts = {}
     local charName  = indexModel.characterName
     if charName then
@@ -687,6 +499,8 @@ function MainFrame:Refresh()
     else
         frame.activeLabel:Hide()
     end
+
+    if not SlotFiller.Context.RequireReady() then return end
 
     -- Keep selectedProfile valid after renames / deletes.
     local names = SlotFiller.State:ListProfileNames()

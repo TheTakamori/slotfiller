@@ -12,12 +12,16 @@ function SlotFiller.Context.GetPlayerGUID()
     return UnitGUID("player")
 end
 
--- Returns localizedClass, classFile, classID for the current player.
-local function getPlayerClassData()
-    if UnitClass then
-        return UnitClass("player")
+-- Returns { name, file, id } for the current player's class, fetching
+-- UnitClass("player") once. GetClassName/GetClassFile/GetClassID below are
+-- thin wrappers over this so callers needing just one field don't have to
+-- know about the others, without each re-querying UnitClass separately.
+function SlotFiller.Context.GetPlayerClass()
+    if not UnitClass then
+        return { name = nil, file = nil, id = nil }
     end
-    return nil, nil, nil
+    local name, file, id = UnitClass("player")
+    return { name = name, file = file, id = id }
 end
 
 function SlotFiller.Context.GetPlayerName()
@@ -35,18 +39,15 @@ function SlotFiller.Context.GetRealmName()
 end
 
 function SlotFiller.Context.GetClassName()
-    local name = getPlayerClassData()
-    return name
+    return SlotFiller.Context.GetPlayerClass().name
 end
 
 function SlotFiller.Context.GetClassFile()
-    local _, file = getPlayerClassData()
-    return file
+    return SlotFiller.Context.GetPlayerClass().file
 end
 
 function SlotFiller.Context.GetClassID()
-    local _, _, id = getPlayerClassData()
-    return id
+    return SlotFiller.Context.GetPlayerClass().id
 end
 
 -- Returns a sorted array of { name, file, id } for all playable classes.

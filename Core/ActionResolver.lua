@@ -2,7 +2,9 @@ local _, SlotFiller = ...
 
 local Constants = SlotFiller.Constants
 local ActionAPI = SlotFiller.ActionAPI
+local SpellBookAPI = SlotFiller.SpellBookAPI
 local Text = SlotFiller.Text
+local MacroResolver = SlotFiller.MacroResolver
 
 SlotFiller.ActionResolver = {}
 
@@ -22,14 +24,13 @@ local function pickupSpell(slot, actionID, spellCache)
         if ActionAPI.PickupZoneAbility(slot.id) then
             return true, nil
         end
-        local T = SlotFiller.Text
-        return false, string.format(T.RESTORE_ZONE_ABILITY_FAILED, actionID)
+        return false, string.format(Text.RESTORE_ZONE_ABILITY_FAILED, actionID)
     end
 
     -- Pre-validate: if the spell is not known for the current class/spec, skip silently
     -- rather than emitting an error.  This is the expected outcome when loading a
     -- profile that was saved on a different class or specialization.
-    if not ActionAPI.IsSpellRestorable(slot.id) then
+    if not SpellBookAPI.IsSpellRestorable(slot.id) then
         return false, nil
     end
 
@@ -62,47 +63,26 @@ local function pickupItem(slot, actionID)
 end
 
 local function pickupMacro(slot, actionID, caches)
-    -- FindMacroID is defined on Restorer (loaded after ActionResolver).  The forward
-    -- reference is safe because this function is called at runtime, not load time.
-    local macroID = SlotFiller.Restorer:FindMacroID(
-        slot, caches.macroBody, caches.macroName, caches.macroID)
+    local macroID, errReason = MacroResolver:ResolveOrCreateMacro(
+        slot.name, slot.body, slot.icon, slot.perCharacter, caches)
 
     if macroID then
         if ActionAPI.PickupMacroID(macroID) then
             return true, nil
         end
-        -- Macro found in cache but pickup itself failed — treat as unrestorable.
+        -- Macro found/created but pickup itself failed — treat as unrestorable.
         return false, string.format(Text.RESTORE_MACRO_FAILED,
             slot.name or slot.body or "?", actionID)
     end
 
-    -- Macro not present on this character. For character-specific macros we know
-    -- the full definition (name, icon, body), so we can recreate it automatically.
-    if slot.perCharacter and slot.name then
-        local body = slot.body
-            and SlotFiller.Normalizer.UncompressMacroText(slot.body)
-            or ""
-        local newID, createErr = ActionAPI.CreateCharacterMacro(
-            slot.name, slot.icon, body)
-        if newID and ActionAPI.PickupMacroID(newID) then
-            -- Update the session caches so later slots referencing this same macro
-            -- find it via FindMacroID instead of attempting a duplicate creation.
-            caches.macroID[newID] = newID
-            if slot.body  then caches.macroBody[slot.body]   = newID end
-            if slot.name  then caches.macroName[slot.name]   = newID end
-            return true, nil
-        end
-        if createErr == "limit" then
-            return false, string.format(
-                SlotFiller.Text.RESTORE_MACRO_LIMIT,
-                slot.name, actionID)
-        end
-        return false, string.format(
-            SlotFiller.Text.RESTORE_MACRO_CREATE_FAILED,
-            slot.name, actionID)
+    if errReason == "limit" then
+        return false, string.format(Text.RESTORE_MACRO_LIMIT, slot.name, actionID)
+    end
+    if errReason == "create_failed" then
+        return false, string.format(Text.RESTORE_MACRO_CREATE_FAILED, slot.name, actionID)
     end
 
-    -- Global macro missing or no name available for recreation.
+    -- "not_found": global macro missing, or no name available for recreation.
     return false, string.format(Text.RESTORE_MACRO_FAILED,
         slot.name or slot.body or "?", actionID)
 end
@@ -160,13 +140,21 @@ local function pickupEquipmentSet(slot, actionID)
     return true, nil
 end
 
+local function pickupOutfit(slot, actionID)
+    if not ActionAPI.PickupOutfitID(slot.id, slot.name) then
+        return false, string.format(Text.RESTORE_OUTFIT_FAILED,
+            slot.name or tostring(slot.id), actionID)
+    end
+    return true, nil
+end
+
 local function pickupUnknown(slot, actionID)
     local rawType = slot.rawType
     local picked = false
     -- Attempt common raw types that may arrive here from future WoW patches.
-    if rawType == "companion" then
+    if rawType == Constants.ACTION_TYPE.COMPANION then
         picked = tryPickupCompanion(slot.subType, slot.id)
-    elseif rawType == "summonmount" then
+    elseif rawType == Constants.ACTION_TYPE.SUMMONMOUNT then
         picked = ActionAPI.PickupMountByID(slot.id)
     end
     if not picked then
@@ -212,6 +200,8 @@ function SlotFiller.ActionResolver.PickupToCursor(slot, actionID, caches)
         return pickupCompanion(slot, actionID)
     elseif t == Constants.ACTION_TYPE.EQUIPMENTSET then
         return pickupEquipmentSet(slot, actionID)
+    elseif t == Constants.ACTION_TYPE.OUTFIT then
+        return pickupOutfit(slot, actionID)
     elseif t == Constants.ACTION_TYPE.UNKNOWN then
         return pickupUnknown(slot, actionID)
     end

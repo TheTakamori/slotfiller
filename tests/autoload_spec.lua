@@ -194,6 +194,37 @@ runner:test("no profiles enabled returns nil even if all would match", function(
         "nil when no profile has enabled=true")
 end)
 
+-- ── Deterministic tie-break ──────────────────────────────────────────────────
+
+runner:test("equal-scoring profiles resolve deterministically by name", function()
+    -- Both score +2 (class match only) for this context — order must not
+    -- depend on pairs() iteration order over the profiles table.
+    withProfiles({
+        Zelda = profileWith({ classes = {"PALADIN"} }),
+        Alpha = profileWith({ classes = {"PALADIN"} }),
+    })
+    support.assert.equal(
+        SlotFiller.AutoLoad.FindBestProfile("Bob-Realm", "PALADIN", "Retribution"),
+        "Alpha",
+        "tied score breaks by profile name ascending")
+end)
+
+runner:test("equal-scoring tie-break is stable across repeated calls", function()
+    withProfiles({
+        Beta  = profileWith({ classes = {"PALADIN"} }),
+        Alpha = profileWith({ classes = {"PALADIN"} }),
+        Gamma = profileWith({ classes = {"PALADIN"} }),
+    })
+    local first = SlotFiller.AutoLoad.FindBestProfile("Bob-Realm", "PALADIN", "Retribution")
+    for _ = 1, 5 do
+        support.assert.equal(
+            SlotFiller.AutoLoad.FindBestProfile("Bob-Realm", "PALADIN", "Retribution"),
+            first,
+            "repeated calls must return the same winner")
+    end
+    support.assert.equal(first, "Alpha", "alphabetically-first name wins the tie")
+end)
+
 -- ── Nil context inputs ───────────────────────────────────────────────────────
 
 runner:test("nil characterKey does not break conflict detection", function()

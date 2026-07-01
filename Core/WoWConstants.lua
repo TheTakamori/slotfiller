@@ -5,6 +5,7 @@ SlotFiller.WoWConstants = {
         ADDON_LOADED                  = "ADDON_LOADED",
         PLAYER_LOGIN                  = "PLAYER_LOGIN",
         PLAYER_SPECIALIZATION_CHANGED = "PLAYER_SPECIALIZATION_CHANGED",
+        PLAYER_REGEN_ENABLED          = "PLAYER_REGEN_ENABLED",
     },
 
     UI = {

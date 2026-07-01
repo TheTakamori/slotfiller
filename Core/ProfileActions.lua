@@ -4,6 +4,17 @@ local Text = SlotFiller.Text
 
 SlotFiller.ProfileActions = {}
 
+-- Shared by Rename/Duplicate: both fail with the same two reason codes
+-- ("exists" the destination name is taken, otherwise the source/old profile
+-- wasn't found) and print the matching message.
+local function reportProfileOpFailure(reason, notFoundName, existsName)
+    if reason == "exists" then
+        SlotFiller.Print(string.format(Text.PROFILE_EXISTS, existsName))
+    else
+        SlotFiller.Print(string.format(Text.PROFILE_NOT_FOUND, notFoundName))
+    end
+end
+
 function SlotFiller.ProfileActions:Save(profileName)
     if not profileName or profileName == "" then
         SlotFiller.Print(Text.PROFILE_NAME_REQUIRED)
@@ -90,11 +101,7 @@ function SlotFiller.ProfileActions:Rename(oldName, newName)
 
     local ok, reason = SlotFiller.State:RenameProfile(oldName, newName)
     if not ok then
-        if reason == "exists" then
-            SlotFiller.Print(string.format(Text.PROFILE_EXISTS, newName))
-        else
-            SlotFiller.Print(string.format(Text.PROFILE_NOT_FOUND, oldName))
-        end
+        reportProfileOpFailure(reason, oldName, newName)
         return false
     end
 
@@ -110,11 +117,7 @@ function SlotFiller.ProfileActions:Duplicate(sourceName, newName)
 
     local ok, reason = SlotFiller.State:DuplicateProfile(sourceName, newName)
     if not ok then
-        if reason == "exists" then
-            SlotFiller.Print(string.format(Text.PROFILE_EXISTS, newName))
-        else
-            SlotFiller.Print(string.format(Text.PROFILE_NOT_FOUND, sourceName))
-        end
+        reportProfileOpFailure(reason, sourceName, newName)
         return false
     end
 
