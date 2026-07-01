@@ -29,6 +29,36 @@ local function getStaticPopupEditText(dialog)
     return Strings.Trim(editBox:GetText())
 end
 
+-- Rename and Duplicate are identical shapes: an edit-box dialog seeded with
+-- an existing profile name, calling the same-named SlotFiller.ProfileActions
+-- method with (existingName, newName) whether the user clicks Accept or
+-- presses Enter in the edit box. methodName is looked up dynamically (not
+-- captured as a function reference) so tests can still stub
+-- SlotFiller.ProfileActions[methodName] freely.
+local function acceptEditBoxDialog(methodName)
+    return function(dialog)
+        local existingName = dialog.data.name
+        local newName = getStaticPopupEditText(dialog)
+        if SlotFiller.Context.RequireReady()
+            and SlotFiller.ProfileActions[methodName](SlotFiller.ProfileActions, existingName, newName) then
+            dialog.data.onSuccess(newName)
+        end
+    end
+end
+
+local function acceptEditBoxOnEnter(methodName)
+    return function(editBox)
+        local dialog = editBox:GetParent()
+        local existingName = dialog.data.name
+        local newName = Strings.Trim(editBox:GetText())
+        if SlotFiller.Context.RequireReady()
+            and SlotFiller.ProfileActions[methodName](SlotFiller.ProfileActions, existingName, newName) then
+            dialog.data.onSuccess(newName)
+        end
+        if dialog then dialog:Hide() end
+    end
+end
+
 StaticPopupDialogs.SLOTFILLER_OVERWRITE = {
     text = Text.UI_CONFIRM_OVERWRITE, button1 = YES, button2 = NO,
     OnAccept = function(dialog)
@@ -44,48 +74,16 @@ StaticPopupDialogs.SLOTFILLER_OVERWRITE = {
 StaticPopupDialogs.SLOTFILLER_RENAME = {
     text = Text.UI_RENAME_PROMPT, button1 = ACCEPT, button2 = CANCEL,
     hasEditBox = true, maxLetters = Constants.MAX_PROFILE_NAME_LEN,
-    OnAccept = function(dialog)
-        local oldName = dialog.data.name
-        local newName = getStaticPopupEditText(dialog)
-        if SlotFiller.Context.RequireReady()
-            and SlotFiller.ProfileActions:Rename(oldName, newName) then
-            dialog.data.onSuccess(newName)
-        end
-    end,
-    EditBoxOnEnterPressed = function(editBox)
-        local dialog  = editBox:GetParent()
-        local oldName = dialog.data.name
-        local newName = Strings.Trim(editBox:GetText())
-        if SlotFiller.Context.RequireReady()
-            and SlotFiller.ProfileActions:Rename(oldName, newName) then
-            dialog.data.onSuccess(newName)
-        end
-        if dialog then dialog:Hide() end
-    end,
+    OnAccept = acceptEditBoxDialog("Rename"),
+    EditBoxOnEnterPressed = acceptEditBoxOnEnter("Rename"),
     timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
 }
 
 StaticPopupDialogs.SLOTFILLER_DUPLICATE = {
     text = Text.UI_DUPLICATE_PROMPT, button1 = ACCEPT, button2 = CANCEL,
     hasEditBox = true, maxLetters = Constants.MAX_PROFILE_NAME_LEN,
-    OnAccept = function(dialog)
-        local sourceName = dialog.data.name
-        local newName    = getStaticPopupEditText(dialog)
-        if SlotFiller.Context.RequireReady()
-            and SlotFiller.ProfileActions:Duplicate(sourceName, newName) then
-            dialog.data.onSuccess(newName)
-        end
-    end,
-    EditBoxOnEnterPressed = function(editBox)
-        local dialog     = editBox:GetParent()
-        local sourceName = dialog.data.name
-        local newName    = Strings.Trim(editBox:GetText())
-        if SlotFiller.Context.RequireReady()
-            and SlotFiller.ProfileActions:Duplicate(sourceName, newName) then
-            dialog.data.onSuccess(newName)
-        end
-        if dialog then dialog:Hide() end
-    end,
+    OnAccept = acceptEditBoxDialog("Duplicate"),
+    EditBoxOnEnterPressed = acceptEditBoxOnEnter("Duplicate"),
     timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
 }
 

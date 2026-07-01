@@ -5,6 +5,7 @@ local Text = SlotFiller.Text
 local WoW = SlotFiller.WoWConstants
 local MinimapLayout = Constants.MINIMAP
 local Texture = Constants.TEXTURE
+local Colors = Constants.COLORS
 
 SlotFiller.UI = SlotFiller.UI or {}
 SlotFiller.UI.MinimapButton = {}
@@ -118,10 +119,10 @@ local function showTooltip(button)
     end
     GameTooltip:SetOwner(button, WoW.UI.ANCHOR_LEFT)
     GameTooltip:ClearLines()
-    GameTooltip:AddLine(Text.MINIMAP_TOOLTIP_TITLE, 1, 1, 1)
-    GameTooltip:AddLine(Text.MINIMAP_TOOLTIP_OPEN, 0.9, 0.9, 0.9, true)
-    GameTooltip:AddLine(Text.MINIMAP_TOOLTIP_TOGGLE, 0.9, 0.9, 0.9, true)
-    GameTooltip:AddLine(Text.MINIMAP_TOOLTIP_DRAG, 0.7, 0.7, 0.7, true)
+    GameTooltip:AddLine(Text.MINIMAP_TOOLTIP_TITLE, Colors.TOOLTIP_TITLE[1], Colors.TOOLTIP_TITLE[2], Colors.TOOLTIP_TITLE[3])
+    GameTooltip:AddLine(Text.MINIMAP_TOOLTIP_OPEN, Colors.TOOLTIP_BODY[1], Colors.TOOLTIP_BODY[2], Colors.TOOLTIP_BODY[3], true)
+    GameTooltip:AddLine(Text.MINIMAP_TOOLTIP_TOGGLE, Colors.TOOLTIP_BODY[1], Colors.TOOLTIP_BODY[2], Colors.TOOLTIP_BODY[3], true)
+    GameTooltip:AddLine(Text.MINIMAP_TOOLTIP_DRAG, Colors.MUTED[1], Colors.MUTED[2], Colors.MUTED[3], true)
     GameTooltip:Show()
 end
 

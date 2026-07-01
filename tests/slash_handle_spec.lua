@@ -139,4 +139,44 @@ runner:test("save/load/list/delete/rename/duplicate dispatch to ProfileActions",
     support.assert.same(calls.duplicate, { "Old", "Copy" }, "duplicate dispatched with source/new")
 end)
 
+-- ---------------------------------------------------------------------------
+-- Hooks notification (open panel refresh)
+-- ---------------------------------------------------------------------------
+
+runner:test("a successful mutating command notifies Hooks.RegisterStateChanged listeners", function()
+    SlotFiller.Context.RequireReady = function() return true end
+    SlotFiller.ProfileActions.Save = function() return true end
+
+    local notified = false
+    SlotFiller.Hooks.RegisterStateChanged(function() notified = true end)
+
+    Handler:Handle("save Raid")
+
+    support.assert.isTrue(notified, "listeners notified after a successful save")
+end)
+
+runner:test("a failed mutating command does not notify Hooks listeners", function()
+    SlotFiller.Context.RequireReady = function() return true end
+    SlotFiller.ProfileActions.Save = function() return false end
+
+    local notified = false
+    SlotFiller.Hooks.RegisterStateChanged(function() notified = true end)
+
+    Handler:Handle("save Raid")
+
+    support.assert.isFalse(notified, "no notification when the action reports failure")
+end)
+
+runner:test("list does not notify Hooks listeners (read-only)", function()
+    SlotFiller.Context.RequireReady = function() return true end
+    SlotFiller.ProfileActions.List = function() end
+
+    local notified = false
+    SlotFiller.Hooks.RegisterStateChanged(function() notified = true end)
+
+    Handler:Handle("list")
+
+    support.assert.isFalse(notified, "read-only list command never notifies")
+end)
+
 os.exit(runner:run())

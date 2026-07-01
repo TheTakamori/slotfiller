@@ -8,6 +8,20 @@ local PLAYER_SPELL_BANK = (Enum and Enum.SpellBookSpellBank and Enum.SpellBookSp
 -- hardcode the player spellbook bank literal themselves.
 SlotFiller.ActionAPI.PLAYER_SPELL_BANK = PLAYER_SPELL_BANK
 
+-- Shared cursor-inspection helpers used throughout this file's pickup
+-- wrappers after a Pickup*/PlaceAction call to check whether it worked.
+local function getCursorType()
+    return GetCursorInfo and GetCursorInfo()
+end
+
+-- True for any non-empty cursor type. Used where the exact type can vary
+-- (e.g. special abilities or SBA-adjacent actions surfacing as "companion",
+-- "flyout", or another type rather than the expected one).
+local function cursorHasContent()
+    local t = getCursorType()
+    return t ~= nil and t ~= ""
+end
+
 function SlotFiller.ActionAPI.GetSlotActionInfo(actionID)
     if C_ActionBar and C_ActionBar.GetActionInfo then
         local actionType, id, subType, extraID = C_ActionBar.GetActionInfo(actionID)
@@ -62,20 +76,20 @@ function SlotFiller.ActionAPI.PickupSpellID(spellID)
         return false
     end
 
-    local function cursorIsValid()
-        local t = GetCursorInfo and GetCursorInfo()
+    local function cursorIsSpellLike()
+        local t = getCursorType()
         return t == "spell" or t == "companion" or t == "mount"
     end
 
     if C_Spell and C_Spell.PickupSpell then
         C_Spell.PickupSpell(spellID)
-        if cursorIsValid() then
+        if cursorIsSpellLike() then
             return true
         end
         if ClearCursor then ClearCursor() end
     elseif PickupSpell then
         PickupSpell(spellID)
-        if cursorIsValid() then
+        if cursorIsSpellLike() then
             return true
         end
         if ClearCursor then ClearCursor() end
@@ -85,7 +99,7 @@ function SlotFiller.ActionAPI.PickupSpellID(spellID)
         local slotIndex, bank = C_SpellBook.FindSpellBookSlotForSpell(spellID)
         if slotIndex then
             C_SpellBook.PickupSpellBookItem(slotIndex, bank or PLAYER_SPELL_BANK)
-            if cursorIsValid() then
+            if cursorIsSpellLike() then
                 return true
             end
             if ClearCursor then ClearCursor() end
@@ -146,10 +160,9 @@ function SlotFiller.ActionAPI.PickupSpellBookIndex(bookIndex, bank)
     else
         return false
     end
-    -- Accept any non-empty cursor type: SBA rotation buttons and some special abilities
-    -- may surface as "companion", "flyout", or another type rather than plain "spell".
-    local cursorType = GetCursorInfo and GetCursorInfo()
-    return cursorType ~= nil and cursorType ~= ""
+    -- Accept any non-empty cursor type: some special abilities may surface as
+    -- "companion", "flyout", or another type rather than plain "spell".
+    return cursorHasContent()
 end
 
 function SlotFiller.ActionAPI.PickupMacroID(macroID)
@@ -157,7 +170,7 @@ function SlotFiller.ActionAPI.PickupMacroID(macroID)
         return false
     end
     PickupMacro(macroID)
-    return GetCursorInfo and GetCursorInfo() == "macro"
+    return getCursorType() == "macro"
 end
 
 -- Attempts to create a new character-specific macro out of combat.
@@ -203,7 +216,7 @@ function SlotFiller.ActionAPI.PickupItemID(itemID)
     else
         return false
     end
-    return GetCursorInfo and GetCursorInfo() == "item"
+    return getCursorType() == "item"
 end
 
 -- flyoutBookCache is optional; when provided (e.g. from ApplyProfile's pre-built cache)
@@ -214,19 +227,14 @@ function SlotFiller.ActionAPI.PickupFlyoutID(flyoutID, flyoutBookCache)
         return false
     end
 
-    local function cursorIsValid()
-        local t = GetCursorInfo and GetCursorInfo()
-        return t ~= nil and t ~= ""
-    end
-
     -- Primary: direct pickup by flyout ID (works for most legacy flyouts).
     if C_Spell and C_Spell.PickupSpell then
         C_Spell.PickupSpell(flyoutID)
-        if cursorIsValid() then return true end
+        if cursorHasContent() then return true end
         if ClearCursor then ClearCursor() end
     elseif PickupSpell then
         PickupSpell(flyoutID)
-        if cursorIsValid() then return true end
+        if cursorHasContent() then return true end
         if ClearCursor then ClearCursor() end
     end
 
@@ -238,7 +246,7 @@ function SlotFiller.ActionAPI.PickupFlyoutID(flyoutID, flyoutBookCache)
         local bookIndex = fc[flyoutID]
         if bookIndex then
             C_SpellBook.PickupSpellBookItem(bookIndex, PLAYER_SPELL_BANK)
-            if cursorIsValid() then return true end
+            if cursorHasContent() then return true end
             if ClearCursor then ClearCursor() end
         end
     end
@@ -266,8 +274,7 @@ function SlotFiller.ActionAPI.PickupMountByID(mountActionID)
         if mountActionID == Constants.RANDOM_FAVORITE_MOUNT_ID then
             if not C_MountJournal.Pickup then return false end
             C_MountJournal.Pickup(0)
-            local t = GetCursorInfo and GetCursorInfo()
-            return t ~= nil and t ~= ""
+            return cursorHasContent()
         end
 
         -- Primary: treat mountActionID as a mountID (they coincide in Midnight's
@@ -313,8 +320,7 @@ function SlotFiller.ActionAPI.PickupOutfitID(outfitID, fallbackName)
 
     if outfitID then
         C_TransmogOutfitInfo.PickupOutfit(outfitID)
-        local cursorType = GetCursorInfo and GetCursorInfo()
-        if cursorType and cursorType ~= "" then
+        if cursorHasContent() then
             return true
         end
         if ClearCursor then ClearCursor() end
@@ -324,8 +330,7 @@ function SlotFiller.ActionAPI.PickupOutfitID(outfitID, fallbackName)
         local outfitInfo = C_TransmogOutfitInfo.GetOutfitInfoByName(fallbackName)
         if outfitInfo and outfitInfo.outfitID then
             C_TransmogOutfitInfo.PickupOutfit(outfitInfo.outfitID)
-            local cursorType = GetCursorInfo and GetCursorInfo()
-            return cursorType ~= nil and cursorType ~= ""
+            return cursorHasContent()
         end
     end
 
@@ -341,7 +346,7 @@ function SlotFiller.ActionAPI.PickupEquipmentSetName(setName)
             local name = C_EquipmentSet.GetEquipmentSetInfo(index)
             if name == setName then
                 C_EquipmentSet.PickupEquipmentSet(index)
-                return GetCursorInfo and GetCursorInfo() == "equipmentset"
+                return getCursorType() == "equipmentset"
             end
         end
         return false
@@ -350,7 +355,7 @@ function SlotFiller.ActionAPI.PickupEquipmentSetName(setName)
         for index = 1, GetNumEquipmentSets() do
             if GetEquipmentSetInfo(index) == setName then
                 PickupEquipmentSet(index)
-                return GetCursorInfo and GetCursorInfo() == "equipmentset"
+                return getCursorType() == "equipmentset"
             end
         end
     end
@@ -365,6 +370,6 @@ function SlotFiller.ActionAPI.PickupBattlePet(petGUID)
     if not C_PetJournal or not C_PetJournal.PickupPet then return false end
     local ok = pcall(C_PetJournal.PickupPet, petGUID)
     if not ok then return false end
-    return GetCursorInfo and GetCursorInfo() == "battlepet"
+    return getCursorType() == "battlepet"
 end
 

@@ -5,7 +5,7 @@ local Text = SlotFiller.Text
 local Colors = Constants.COLORS
 local Frame = Constants.FRAME
 local Strings = SlotFiller.Strings
-local Widgets = SlotFiller.UI and SlotFiller.UI.Widgets
+local Widgets = SlotFiller.UI.Widgets
 local AutoLoadIndex = SlotFiller.AutoLoadIndex
 
 SlotFiller.UI = SlotFiller.UI or {}
@@ -335,17 +335,6 @@ function MainFrame:Ensure()
     frame.versionLabel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 8)
     frame.versionLabel:SetTextColor(Colors.MUTED[1], Colors.MUTED[2], Colors.MUTED[3])
 
-    -- SBA Warning hover — aligned to the same baseline as versionLabel.
-    frame.sbaHover = CreateFrame("Frame", nil, frame)
-    frame.sbaHover:SetSize(80, 16)
-    frame.sbaHover:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 8)
-    frame.sbaHover:EnableMouse(true)
-    frame.sbaWarningLabel = frame.sbaHover:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    frame.sbaWarningLabel:SetPoint("BOTTOMLEFT", frame.sbaHover, "BOTTOMLEFT", 0, 0)
-    frame.sbaWarningLabel:SetText(Text.UI_SBA_WARNING)
-    frame.sbaWarningLabel:SetTextColor(Colors.WARNING[1], Colors.WARNING[2], Colors.WARNING[3], Colors.WARNING[4])
-    Widgets.AttachTooltip(frame.sbaHover, Text.UI_SBA_WARNING, Text.UI_SBA_HINT, Colors.WARNING)
-
     -- ── Profile dropdown ──
     frame.profileLabel = Widgets.CreateLabel(frame, Text.UI_PROFILE_LABEL, "GameFontNormalSmall")
     frame.profileLabel:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, Frame.PROFILE_BOTTOM + Frame.DD_HEIGHT + 4)
@@ -480,9 +469,7 @@ function MainFrame:Refresh()
 
     local indexModel = SlotFiller.ProfileIndex.Build()
 
-    -- Build "Name-Realm · Class · Spec" info line. Always updated, even when
-    -- RequireReady() below would fail, so the header never shows stale data
-    -- from a previous character while the panel is open.
+    -- Build "Name-Realm · Class · Spec" info line.
     local specParts = {}
     local charName  = indexModel.characterName
     if charName then
@@ -500,7 +487,12 @@ function MainFrame:Refresh()
         frame.activeLabel:Hide()
     end
 
-    if not SlotFiller.Context.RequireReady() then return end
+    -- Everything below (profile list, autoload dropdowns, save box) only
+    -- reads SavedVariables and static class/spec data — none of it needs a
+    -- ready character, so it always rebuilds rather than leaving stale
+    -- dropdown state behind a not-ready guard. Actions that actually touch
+    -- the character's action bars (Save/Load) have their own RequireReady()
+    -- checks at the point of use.
 
     -- Keep selectedProfile valid after renames / deletes.
     local names = SlotFiller.State:ListProfileNames()

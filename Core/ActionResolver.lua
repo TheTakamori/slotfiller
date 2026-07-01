@@ -49,9 +49,16 @@ local function pickupSpell(slot, actionID, spellCache)
     if not picked and slot.id then
         picked = ActionAPI.PickupSpellID(slot.id)
     end
-    -- Silently drop if all paths failed; IsSpellRestorable returning true but pickup
-    -- failing is an edge case (proc / passive spells) that does not warrant an error.
-    return picked, nil
+    if picked then
+        return true, nil
+    end
+    -- IsSpellRestorable said this spell is known/available, so every pickup
+    -- path failing here is an unexpected failure (not the routine "off-spec
+    -- spell" case already filtered out above) — surface it like every other
+    -- action type does, rather than leaving a silently empty slot with no
+    -- /sfill errors entry to explain why.
+    return false, string.format(Text.RESTORE_SPELL_FAILED,
+        slot.name or tostring(slot.id), actionID)
 end
 
 local function pickupItem(slot, actionID)

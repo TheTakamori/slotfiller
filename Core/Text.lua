@@ -27,6 +27,7 @@ SlotFiller.Text = {
     RESTORE_MACRO_LIMIT = "Cannot recreate character macro '%s' in slot %d: the "
         .. Constants.MAX_CHARACTER_MACROS_FALLBACK .. " character macro limit is full.",
     RESTORE_MACRO_CREATE_FAILED = "Cannot recreate character macro '%s' in slot %d: macro creation failed.",
+    RESTORE_SPELL_FAILED = "Unable to restore spell %s to slot %d.",
     RESTORE_ITEM_FAILED = "Unable to restore item %s to slot %d.",
     RESTORE_MACRO_FAILED = "Unable to restore macro %s to slot %d.",
     RESTORE_FLYOUT_FAILED = "Unable to restore flyout %s to slot %d.",
@@ -39,9 +40,6 @@ SlotFiller.Text = {
     RESTORE_CLICKBINDING_MACRO_LIMIT = "Cannot recreate click-cast macro '%s': the "
         .. Constants.MAX_CHARACTER_MACROS_FALLBACK .. " character macro limit is full.",
     RESTORE_CLICKBINDING_MACRO_FAILED = "Cannot restore click-cast macro '%s' for a click binding.",
-    RESTORE_SBA_NO_SOURCE = "Cannot restore Assisted Combat button to slot %d. No Rotation Assistant button was found on your action bars — drag one from the spellbook to any bar, then reload the profile.",
-    RESTORE_SBA_API_MISSING = "Cannot restore Assisted Combat button to slot %d. PickupAction unavailable.",
-    RESTORE_SBA_PICKUP_FAILED = "Cannot restore Assisted Combat button to slot %d. Pickup from source slot %d failed.",
     NO_ERRORS = "No restore issues recorded.",
 
     LIST_HEADER = "Saved profiles:",
@@ -82,9 +80,6 @@ SlotFiller.Text = {
         .. "by class and specialization wins.",
     -- Copy frame
     UI_COPY_HINT = "Text is selected. Press Ctrl+C to copy, then close.",
-    -- SBA
-    UI_SBA_WARNING = "SBA Warning",
-    UI_SBA_HINT = "SlotFiller can move an existing Rotation Assistant (SBA) button between slots, but cannot create one from scratch — this is a known Blizzard limitation.\n\nThis only matters if you switch between profiles where one has an SBA button and one does not. If no SBA button is present on any bar when loading, it cannot be placed.\n\nFix: keep an SBA button somewhere on every profile (even off-screen), so it is always available to move. Note: macros containing SBA functionality are not affected — SlotFiller handles those normally.",
 
     MINIMAP_TOOLTIP_TITLE = Constants.ADDON_TITLE,
     MINIMAP_TOOLTIP_OPEN = "Click to open profiles.",

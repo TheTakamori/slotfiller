@@ -31,7 +31,7 @@ end
 
 function Widgets.CreateButton(parent, text, width)
     local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    button:SetSize(width or Constants.FRAME.BUTTON_WIDTH_SM, 22)
+    button:SetSize(width or Constants.FRAME.BUTTON_WIDTH_SM, Constants.FRAME.DD_HEIGHT)
     button:SetText(text)
     return button
 end
@@ -39,7 +39,7 @@ end
 -- Attaches a GameTooltip OnEnter/OnLeave pair to hoverFrame showing a
 -- title line followed by a wrapped hint line. titleColor/hintColor default
 -- to Constants.COLORS.TOOLTIP_TITLE/TOOLTIP_BODY; pass a different color
--- table (e.g. Constants.COLORS.WARNING) to highlight the title.
+-- table to highlight the title instead.
 function Widgets.AttachTooltip(hoverFrame, titleText, hintText, titleColor, hintColor)
     titleColor = titleColor or Colors.TOOLTIP_TITLE
     hintColor  = hintColor  or Colors.TOOLTIP_BODY

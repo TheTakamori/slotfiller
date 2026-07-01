@@ -14,6 +14,7 @@ local specs = {
     "context_spec.lua",
     "slash_spec.lua",
     "slash_handle_spec.lua",
+    "profile_popups_spec.lua",
     "async_spec.lua",
     "restorer_spec.lua",
     "macro_resolver_spec.lua",

@@ -49,6 +49,24 @@ runner:test("spell slot: silently skipped when not restorable (off-spec)", funct
     support.assert.isNil(err, "no error — silent skip")
 end)
 
+runner:test("spell slot: error (not silent) when restorable but every pickup path fails", function()
+    local originalRestorable = BookAPI.IsSpellRestorable
+    local originalPickupID   = API.PickupSpellID
+    BookAPI.IsSpellRestorable = function() return true end
+    API.PickupSpellID = function() return false end
+
+    local picked, err = R.PickupToCursor(
+        { type = C.ACTION_TYPE.SPELL, id = 42, name = "Stubborn Spell" }, 3, emptyCaches())
+
+    BookAPI.IsSpellRestorable = originalRestorable
+    API.PickupSpellID = originalPickupID
+
+    support.assert.equal(picked, false, "not picked")
+    support.assert.isTrue(err ~= nil, "unexpected pickup failure is reported, not silently swallowed")
+    support.assert.isTrue(err:find("slot 3") ~= nil, "error names the slot")
+    support.assert.isTrue(err:find("Stubborn Spell") ~= nil, "error names the spell")
+end)
+
 -- ---------------------------------------------------------------------------
 -- Zone ability spell path
 -- ---------------------------------------------------------------------------

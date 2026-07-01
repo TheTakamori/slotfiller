@@ -17,83 +17,8 @@ local function addError(self, message)
     self.lastErrors[#self.lastErrors + 1] = message
 end
 
--- Returns true if the given action slot currently holds an SBA (assistedcombat) button.
--- Uses C_ActionBar.IsAssistedCombatAction when available; falls back to GetActionInfo
--- subType comparison, which is known to work reliably on Midnight 12.0.7.
-local function slotIsAssistedCombat(actionID)
-    if C_ActionBar and C_ActionBar.IsAssistedCombatAction then
-        return C_ActionBar.IsAssistedCombatAction(actionID)
-    end
-    local actionType, _, subType = ActionAPI.GetSlotActionInfo(actionID)
-    return actionType == Constants.ACTION_TYPE.SPELL
-        and subType == Constants.ACTION_SUBTYPE.ASSISTEDCOMBAT
-end
-
--- Returns a list of all action slot IDs that currently hold an SBA button.
--- Uses C_ActionBar.FindAssistedCombatActionButtons when available; otherwise
--- walks all slots via GetActionInfo.
-local function findAllAssistedCombatSlots()
-    if C_ActionBar and C_ActionBar.FindAssistedCombatActionButtons then
-        local result = C_ActionBar.FindAssistedCombatActionButtons()
-        if result and #result > 0 then
-            return result
-        end
-    end
-    local slots = {}
-    for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
-        if slotIsAssistedCombat(actionID) then
-            slots[#slots + 1] = actionID
-        end
-    end
-    return slots
-end
-
--- Restores an Assisted Combat (SBA) button to actionID.
--- spareSBASlots is a pre-captured list of currently-SBA slots that are not themselves
--- profile SBA targets (safe to steal from). Mutated in-place as sources are consumed.
-function SlotFiller.Restorer:RestoreSBASlot(actionID, spareSBASlots)
-    -- Already correct — leave the existing SBA button untouched.
-    if slotIsAssistedCombat(actionID) then
-        return
-    end
-
-    -- Find a spare source slot to copy from.
-    local sourceSlot = nil
-    if spareSBASlots and #spareSBASlots > 0 then
-        sourceSlot = table.remove(spareSBASlots, 1)
-    end
-
-    if not sourceSlot then
-        addError(self, string.format(Text.RESTORE_SBA_NO_SOURCE, actionID))
-        return
-    end
-
-    if not PickupAction then
-        addError(self, string.format(Text.RESTORE_SBA_API_MISSING, actionID))
-        return
-    end
-
-    PickupAction(sourceSlot)
-    local cursorType = GetCursorInfo and GetCursorInfo()
-    if cursorType and cursorType ~= "" then
-        ActionAPI.PlaceSlot(actionID)
-        if ClearCursor then ClearCursor() end  -- discard any old content swapped off the target slot
-    else
-        if ClearCursor then ClearCursor() end
-        addError(self, string.format(Text.RESTORE_SBA_PICKUP_FAILED, actionID, sourceSlot))
-    end
-end
-
 function SlotFiller.Restorer:RestoreSlot(actionID, slot, caches)
     if ClearCursor then ClearCursor() end
-
-    -- SBA buttons cannot be recreated once removed; always preserve them regardless
-    -- of what the profile says.  SBA target slots are placed by the dedicated pre-pass
-    -- and are excluded from Pass 2, so this guard handles only the case where a
-    -- non-SBA profile entry would otherwise displace an existing SBA button.
-    if slotIsAssistedCombat(actionID) then
-        return
-    end
 
     if not slot then
         ActionAPI.ClearSlot(actionID)
@@ -146,46 +71,12 @@ function SlotFiller.Restorer:ApplyProfile(profile)
         macroID   = macroIDCache,
     }
 
-    -- Identify which profile slots need an Assisted Combat (SBA) button.
-    local sbaTargetSet = {}
-    local hasSBATargets = false
+    -- Assisted Combat (SBA) slots need no special handling here: Scanner
+    -- captures the button's currently-suggested spell as an ordinary spell
+    -- id (see Scanner.lua), so it restores through this same single pass via
+    -- ActionResolver's normal spell pickup path.
     for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
-        local slot = profile.slots[actionID]
-        if slot and slot.type == Constants.ACTION_TYPE.SPELL and slot.subType == Constants.ACTION_SUBTYPE.ASSISTEDCOMBAT then
-            sbaTargetSet[actionID] = true
-            hasSBATargets = true
-        end
-    end
-
-    -- Build a list of currently-SBA slots that are NOT already at a profile SBA target
-    -- position; these are safe to use as pickup sources without disturbing correct slots.
-    local spareSBASlots = {}
-    if hasSBATargets then
-        local currentSBA = findAllAssistedCombatSlots()
-        for _, slotID in ipairs(currentSBA) do
-            if not sbaTargetSet[slotID] then
-                spareSBASlots[#spareSBASlots + 1] = slotID
-            end
-        end
-    end
-
-    -- Pass 1: Restore SBA slots before any bars are modified (avoids source destruction).
-    if hasSBATargets then
-        for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
-            if sbaTargetSet[actionID] then
-                self:RestoreSBASlot(actionID, spareSBASlots)
-            end
-            if actionID % Constants.ASYNC_YIELD_BATCH == 0 then
-                SlotFiller.Async.MaybeYield()
-            end
-        end
-    end
-
-    -- Pass 2: Restore all remaining (non-SBA) slots.
-    for actionID = Constants.SLOT_MIN, Constants.SLOT_MAX do
-        if not sbaTargetSet[actionID] then
-            self:RestoreSlot(actionID, profile.slots[actionID], caches)
-        end
+        self:RestoreSlot(actionID, profile.slots[actionID], caches)
         if actionID % Constants.ASYNC_YIELD_BATCH == 0 then
             SlotFiller.Async.MaybeYield()
         end

@@ -137,21 +137,29 @@ function SlotFiller.UI.SlashCommands:Handle(message)
     end
 
     local actions = SlotFiller.ProfileActions
+    local mutated = false
 
     if verb == Constants.COMMAND.SAVE then
-        actions:Save(parsed.profileName)
+        mutated = actions:Save(parsed.profileName)
     elseif verb == Constants.COMMAND.LOAD then
-        actions:Load(parsed.profileName)
+        mutated = actions:Load(parsed.profileName)
     elseif verb == Constants.COMMAND.LIST then
         actions:List()
     elseif verb == Constants.COMMAND.DELETE then
-        actions:Delete(parsed.profileName)
+        mutated = actions:Delete(parsed.profileName)
     elseif verb == Constants.COMMAND.RENAME then
-        actions:Rename(parsed.oldName, parsed.newName)
+        mutated = actions:Rename(parsed.oldName, parsed.newName)
     elseif verb == Constants.COMMAND.DUPLICATE then
-        actions:Duplicate(parsed.sourceName, parsed.newName)
+        mutated = actions:Duplicate(parsed.sourceName, parsed.newName)
     else
         showHelp()
+    end
+
+    -- A profile panel already open needs to reflect changes made via slash
+    -- commands too, not just via its own buttons (which call Refresh
+    -- directly) — notify the same way Core-driven changes (auto-load) do.
+    if mutated then
+        SlotFiller.Hooks.NotifyStateChanged()
     end
 end
 

@@ -8,7 +8,7 @@ slot.
 Profiles are account-wide. Any profile saved on one character is available on
 every other character on the account.
 
-Current version: `1.3.0`.
+Current version: `1.3.1`.
 
 Target: WoW Retail `12.0.7 (Midnight)`.
 
@@ -83,13 +83,13 @@ development via the `.toc` but are stripped from release builds by
 - Save and load are blocked while in combat.
 - Slots whose spells are unavailable for the current spec are silently skipped
   on load.
-- The Rotation Assistant (SBA) button can be moved between slots but cannot
-  be created from scratch (a Blizzard limitation). Keep an SBA button on every
-  profile if you mix SBA and non-SBA layouts.
+- The Rotation Assistant (SBA) button is saved and restored using the spell
+  it is currently suggesting, so it restores like any other spell — no need
+  to keep a spare SBA button elsewhere on your bars.
 - Pet command tokens (Attack, Follow, Stay, and similar) are never relocated
   on load — only pet abilities are restored. Reordering tokens risks losing
   one permanently with no way to recover it, so the addon leaves them exactly
-  where they currently are, the same trade-off it makes for the SBA button.
+  where they currently are.
 - Click Bindings are restored additively: a profile saved with none never
   clears bindings already set on the character loading it.
 - Click the minimap button to open the profile manager.

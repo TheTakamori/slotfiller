@@ -59,8 +59,8 @@ end
 -- scan does one O(1) lookup per spell slot instead of a linear scan of the
 -- (usually tiny, but not guaranteed) active-abilities list per slot.
 -- spellOverrideMap is an optional pre-built override-ID -> base-ID table (see
--- ActionAPI.BuildSpellOverrideMap) used to normalise spell slots; also built
--- once per Scan() and shared across all 180 slots.
+-- SpellBookAPI.BuildSpellOverrideMap) used to normalise spell slots; also
+-- built once per Scan() and shared across all 180 slots.
 function SlotFiller.Scanner:ReadSlot(actionID, zoneAbilitySpellIDs, spellOverrideMap)
     local actionType, id, subType, extraID = ActionAPI.GetSlotActionInfo(actionID)
     -- Replicate HasSlotAction logic with already-fetched values to avoid a
@@ -84,6 +84,28 @@ function SlotFiller.Scanner:ReadSlot(actionID, zoneAbilitySpellIDs, spellOverrid
     }
 
     if actionType == Constants.ACTION_TYPE.SPELL then
+        -- The Assisted Combat (Rotation Assistant / SBA) button isn't a real
+        -- spellbook entry and can't be found by spellbook index like a normal
+        -- spell, but C_AssistedCombat.GetActionSpell() reports the spell it is
+        -- currently suggesting, which is itself an ordinary, pickup-able
+        -- spell. Capturing that spell ID here — and treating the slot as a
+        -- plain spell from that point on (clearing subType) — lets it restore
+        -- through the same spell-pickup path as everything else, including
+        -- the talent-override normalisation below, with no need to keep a
+        -- spare SBA button elsewhere on the bars to restore from.
+        if subType == Constants.ACTION_SUBTYPE.ASSISTEDCOMBAT
+            and C_AssistedCombat and C_AssistedCombat.GetActionSpell then
+            local suggested = C_AssistedCombat.GetActionSpell()
+            -- Guard against 0: undocumented, but harmless to reject since a
+            -- real spellID is never 0; falls back to the native (unresolved)
+            -- id below, same as when the API is unavailable.
+            if suggested and suggested ~= 0 then
+                id = suggested
+                raw.id = suggested
+                subType = nil
+                raw.subType = nil
+            end
+        end
         raw.name = getSpellName(id)
         -- Detect Draenor/zone abilities (hidden from spellbook; managed by C_ZoneAbility).
         -- Tagging them here lets the Restorer use the correct pickup path and surface a
@@ -91,9 +113,12 @@ function SlotFiller.Scanner:ReadSlot(actionID, zoneAbilitySpellIDs, spellOverrid
         if zoneAbilitySpellIDs and zoneAbilitySpellIDs[id] then
             raw.isZoneAbility = true
         end
-        -- Normalise a talent-overridden spell back to its base ID (skip zone
-        -- abilities and SBA, which aren't real spellbook entries) so the saved
-        -- slot survives talent or spec changes made after the save.
+        -- Normalise a talent-overridden spell back to its base ID so the saved
+        -- slot survives talent or spec changes made after the save. Skipped
+        -- only for zone abilities and an SBA slot whose id could not be
+        -- resolved to a real spell above — in both cases raw.id isn't a
+        -- genuine spellbook entry, so a talent-override lookup on it would be
+        -- meaningless.
         if not raw.isZoneAbility and subType ~= Constants.ACTION_SUBTYPE.ASSISTEDCOMBAT
             and spellOverrideMap and spellOverrideMap[id] then
             raw.id = spellOverrideMap[id]

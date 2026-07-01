@@ -234,61 +234,50 @@ runner:test("summonpet slot succeeds when pet is in the collection", function()
 end)
 
 -- ---------------------------------------------------------------------------
--- SBA preservation (rule d)
+-- SBA restores like an ordinary spell — no special relocation pass or
+-- preservation guard.
 -- ---------------------------------------------------------------------------
 
-runner:test("RestoreSlot preserves an SBA button regardless of profile content", function()
-    -- Stub GetSlotActionInfo so slot 10 reports assistedcombat.
-    -- slotIsAssistedCombat falls back to ActionAPI.GetSlotActionInfo when
-    -- C_ActionBar.IsAssistedCombatAction is absent (as it is in the test host).
-    local originalGetInfo = SlotFiller.ActionAPI.GetSlotActionInfo
-    SlotFiller.ActionAPI.GetSlotActionInfo = function(actionID)
-        if actionID == 10 then
-            return "spell", 12345, "assistedcombat", nil
-        end
-        return nil
-    end
-
-    local cleared = {}
+runner:test("RestoreSlot clears and restores an assistedcombat-tagged slot like any other spell", function()
+    local cleared, placed = {}, {}
     local originalClearSlot = SlotFiller.ActionAPI.ClearSlot
-    SlotFiller.ActionAPI.ClearSlot = function(actionID)
-        cleared[actionID] = true
-    end
+    local originalPlaceSlot = SlotFiller.ActionAPI.PlaceSlot
+    SlotFiller.ActionAPI.ClearSlot = function(actionID) cleared[actionID] = true end
+    SlotFiller.ActionAPI.PlaceSlot = function(actionID) placed[actionID] = true end
 
-    -- Profile says slot 10 should hold a normal spell — SBA must not be displaced.
+    local originalPickupID = SlotFiller.ActionAPI.PickupSpellID
+    SlotFiller.ActionAPI.PickupSpellID = function() return true end
+
     local caches = { spell = {}, flyout = {}, macroBody = {}, macroName = {}, macroID = {} }
     SlotFiller.State:ResetForTests()
-    R:RestoreSlot(10, { type = C.ACTION_TYPE.SPELL, id = 99999, name = "Normal Spell" }, caches)
+    R:RestoreSlot(10, { type = C.ACTION_TYPE.SPELL, id = 12345, subType = C.ACTION_SUBTYPE.ASSISTEDCOMBAT }, caches)
 
-    SlotFiller.ActionAPI.GetSlotActionInfo = originalGetInfo
     SlotFiller.ActionAPI.ClearSlot = originalClearSlot
+    SlotFiller.ActionAPI.PlaceSlot = originalPlaceSlot
+    SlotFiller.ActionAPI.PickupSpellID = originalPickupID
 
-    support.assert.isNil(cleared[10], "SBA slot must not be cleared even when profile wants a different action")
+    support.assert.isTrue(cleared[10], "slot is cleared like any normal spell slot")
+    support.assert.isTrue(placed[10], "captured spell is placed like any normal spell")
 end)
 
-runner:test("RestoreSlot preserves an SBA button when profile slot is empty", function()
-    local originalGetInfo = SlotFiller.ActionAPI.GetSlotActionInfo
-    SlotFiller.ActionAPI.GetSlotActionInfo = function(actionID)
-        if actionID == 15 then
-            return "spell", 99, "assistedcombat", nil
-        end
-        return nil
-    end
+runner:test("ApplyProfile no longer special-cases SBA slots into a separate pass", function()
+    _G.MAX_ACCOUNT_MACROS = 0
+    _G.MAX_CHARACTER_MACROS = 0
 
-    local cleared = {}
-    local originalClearSlot = SlotFiller.ActionAPI.ClearSlot
-    SlotFiller.ActionAPI.ClearSlot = function(actionID)
-        cleared[actionID] = true
-    end
+    local originalPickupID = SlotFiller.ActionAPI.PickupSpellID
+    SlotFiller.ActionAPI.PickupSpellID = function() return true end
 
-    local caches = { spell = {}, flyout = {}, macroBody = {}, macroName = {}, macroID = {} }
-    SlotFiller.State:ResetForTests()
-    R:RestoreSlot(15, nil, caches)  -- profile has nothing here
+    local profile = { slots = {
+        [10] = { type = C.ACTION_TYPE.SPELL, id = 12345, subType = C.ACTION_SUBTYPE.ASSISTEDCOMBAT },
+    }}
+    local ok, errCount = R:ApplyProfile(profile)
 
-    SlotFiller.ActionAPI.GetSlotActionInfo = originalGetInfo
-    SlotFiller.ActionAPI.ClearSlot = originalClearSlot
+    SlotFiller.ActionAPI.PickupSpellID = originalPickupID
+    _G.MAX_ACCOUNT_MACROS = nil
+    _G.MAX_CHARACTER_MACROS = nil
 
-    support.assert.isNil(cleared[15], "SBA slot must not be cleared even when profile slot is empty")
+    support.assert.equal(ok, true, "apply succeeds")
+    support.assert.equal(errCount, 0, "captured SBA-suggested spell restores cleanly via the normal spell path")
 end)
 
 -- ---------------------------------------------------------------------------
@@ -322,7 +311,7 @@ runner:test("loading profile B after profile A never leaves A stale content in e
     SlotFiller.ActionAPI.PickupItemID = originalPickup
 
     -- Slot 5 must be cleared in profile A's load (pre-clear before failed pickup)
-    -- AND in profile B's load (empty sweep of all non-SBA slots).
+    -- AND in profile B's load (empty sweep of all slots).
     support.assert.isTrue(
         (clearCounts[5] or 0) >= 2,
         "slot 5 swept in both profile A and profile B loads; stale A content cannot survive")

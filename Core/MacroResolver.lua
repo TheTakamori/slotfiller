@@ -16,8 +16,13 @@ function SlotFiller.MacroResolver:BuildMacroCache()
     local nameCache = {}
     local idCache = {}
     local blacklist = {}
+    -- Both globals are polyfilled here rather than assumed present: Blizzard
+    -- has deprecated similar macro-count globals before, and silently
+    -- treating a missing MAX_CHARACTER_MACROS as 0 would stop character
+    -- macros from ever being cached (they occupy slots above the account
+    -- macro count).
     local maxMacros = (MAX_ACCOUNT_MACROS or Constants.MAX_ACCOUNT_MACROS_FALLBACK)
-        + (MAX_CHARACTER_MACROS or 0)
+        + (MAX_CHARACTER_MACROS or Constants.MAX_CHARACTER_MACROS_FALLBACK)
 
     if not GetMacroInfo then
         return bodyCache, nameCache, idCache

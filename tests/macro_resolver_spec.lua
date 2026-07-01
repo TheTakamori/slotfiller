@@ -66,6 +66,36 @@ runner:test("BuildMacroCache blacklists duplicate macro names", function()
 end)
 
 -- ---------------------------------------------------------------------------
+-- BuildMacroCache — macro-count fallback
+-- ---------------------------------------------------------------------------
+
+runner:test("BuildMacroCache falls back to Constants when MAX_CHARACTER_MACROS is unavailable", function()
+    -- Regression test: Blizzard has deprecated similar macro-count globals
+    -- before, and a naive `MAX_CHARACTER_MACROS or 0` fallback would silently
+    -- stop character-specific macros (which occupy slots above the account
+    -- macro count) from ever being scanned/cached.
+    local C = SlotFiller.Constants
+    _G.MAX_ACCOUNT_MACROS = nil
+    _G.MAX_CHARACTER_MACROS = nil
+    local characterSlot = C.MAX_ACCOUNT_MACROS_FALLBACK + 1
+    _G.GetMacroInfo = function(id)
+        if id == characterSlot then
+            return "CharMacro", nil, "/cast Fireball"
+        end
+        return nil
+    end
+
+    local _, nameCache = M:BuildMacroCache()
+
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = nil
+    _G.MAX_CHARACTER_MACROS = nil
+
+    support.assert.equal(nameCache["CharMacro"], characterSlot,
+        "character macro slot beyond the account-macro fallback is still scanned")
+end)
+
+-- ---------------------------------------------------------------------------
 -- FindMacroID
 -- ---------------------------------------------------------------------------
 

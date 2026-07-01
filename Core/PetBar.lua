@@ -10,8 +10,7 @@ local PetAPI = SlotFiller.PetActionAPI
 -- profile was saved (or since an earlier slot in the same restore pass moved
 -- something), the token can be lost with no way to recover it. Restore only
 -- ever clears or places pet *spells*; any live token slot is left untouched
--- regardless of what the profile says, which is the same trade-off this addon
--- already makes for the Rotation Assistant (SBA) button.
+-- regardless of what the profile says.
 SlotFiller.PetBar = {}
 
 function SlotFiller.PetBar:Scan()

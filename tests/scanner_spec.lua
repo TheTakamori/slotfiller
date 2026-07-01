@@ -167,7 +167,10 @@ runner:test("ReadSlot rewrites an overridden spell back to its base ID", functio
     support.assert.equal(slot.id, 100, "saved id is the base spell, not the override")
 end)
 
-runner:test("ReadSlot leaves an SBA (assistedcombat) slot's id untouched", function()
+runner:test("ReadSlot never applies the talent-override map to an unresolved assistedcombat slot", function()
+    -- No C_AssistedCombat stub: capture fails, so the id stays the raw
+    -- (non-spellbook) placeholder — remapping it via the override map would
+    -- be meaningless, so it must stay skipped in this case.
     local originalGetInfo = API.GetSlotActionInfo
     API.GetSlotActionInfo = function(actionID)
         if actionID == 9 then return "spell", 200, "assistedcombat", nil end
@@ -181,7 +184,81 @@ runner:test("ReadSlot leaves an SBA (assistedcombat) slot's id untouched", funct
     API.GetSlotActionInfo = originalGetInfo
     _G.C_Spell = nil
 
-    support.assert.equal(slot.id, 200, "assistedcombat id is never remapped")
+    support.assert.equal(slot.id, 200, "assistedcombat id is never remapped through the talent-override map")
+end)
+
+runner:test("ReadSlot captures C_AssistedCombat.GetActionSpell() as the id for an assistedcombat slot", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 9 then return "spell", 200, "assistedcombat", nil end
+        return nil
+    end
+    _G.C_Spell = { GetSpellName = function() return "Templar Strike" end }
+    _G.C_AssistedCombat = { GetActionSpell = function() return 555 end }
+
+    local slot = S:ReadSlot(9)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.C_Spell = nil
+    _G.C_AssistedCombat = nil
+
+    support.assert.equal(slot.id, 555, "id is overridden with the live suggested spell")
+    support.assert.equal(slot.name, "Templar Strike", "name reflects the captured suggestion, not the raw slot id")
+    support.assert.isNil(slot.subType, "subType is cleared once treated as a plain spell")
+end)
+
+runner:test("ReadSlot keeps the native id for an assistedcombat slot when C_AssistedCombat is unavailable", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 9 then return "spell", 200, "assistedcombat", nil end
+        return nil
+    end
+    _G.C_Spell = { GetSpellName = function() return "Rotation Spell" end }
+
+    local slot = S:ReadSlot(9)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.C_Spell = nil
+
+    support.assert.equal(slot.id, 200, "falls back to the native id without C_AssistedCombat")
+end)
+
+runner:test("ReadSlot ignores a suggested spell id of 0 and falls back to the native id", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 9 then return "spell", 200, "assistedcombat", nil end
+        return nil
+    end
+    _G.C_Spell = { GetSpellName = function() return "Rotation Spell" end }
+    _G.C_AssistedCombat = { GetActionSpell = function() return 0 end }
+
+    local slot = S:ReadSlot(9)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.C_Spell = nil
+    _G.C_AssistedCombat = nil
+
+    support.assert.equal(slot.id, 200, "id 0 is treated as no suggestion, falls back to native id")
+end)
+
+runner:test("ReadSlot applies the talent-override map to a successfully captured SBA suggestion", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 9 then return "spell", 200, "assistedcombat", nil end
+        return nil
+    end
+    _G.C_Spell = { GetSpellName = function() return "Overridden Suggestion" end }
+    _G.C_AssistedCombat = { GetActionSpell = function() return 555 end }
+
+    local overrideMap = { [555] = 111 }  -- 555 (override) -> 111 (base)
+    local slot = S:ReadSlot(9, nil, overrideMap)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.C_Spell = nil
+    _G.C_AssistedCombat = nil
+
+    support.assert.equal(slot.id, 111,
+        "the captured suggestion is itself a real spell, so it is normalised to its base id like any other spell")
 end)
 
 runner:test("ReadSlot leaves a spell id untouched when no override map is given", function()

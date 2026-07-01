@@ -23,18 +23,25 @@ local function isOnCurrentSpecSkillLine(skillLineInfo)
     return true
 end
 
+-- Shared by isSpellBookItemType (exclude flyouts from the generic spell
+-- cache) and BuildFlyoutBookCache (include only flyouts), so the two never
+-- drift on what counts as a flyout entry.
+local function isFlyoutItemType(itemInfo)
+    if not itemInfo or not itemInfo.itemType then
+        return false
+    end
+    if Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout then
+        return itemInfo.itemType == Enum.SpellBookItemType.Flyout
+    end
+    return type(itemInfo.itemType) == "string" and string.lower(itemInfo.itemType) == "flyout"
+end
+
 local function isSpellBookItemType(itemInfo)
     if not itemInfo or not itemInfo.itemType then
         return true
     end
     -- Exclude flyout menus — everything else (spell, assistedcombat, etc.) is welcome
-    if Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout then
-        if itemInfo.itemType == Enum.SpellBookItemType.Flyout then
-            return false
-        end
-    end
-    local t = type(itemInfo.itemType) == "string" and string.lower(itemInfo.itemType) or ""
-    return t ~= "flyout"
+    return not isFlyoutItemType(itemInfo)
 end
 
 function SlotFiller.SpellBookAPI.GetSpellBookItemInfo(bookIndex)
@@ -134,9 +141,10 @@ function SlotFiller.SpellBookAPI.BuildSpellBookCache()
     end)
     return cache
 end
--- Spellbook scan confirmed that the SBA (assistedcombat) button does not appear in
--- any spellbook skill line and cannot be picked up programmatically. Restoration
--- relies solely on PickupAction from an existing SBA slot on the action bars.
+-- Note: the Assisted Combat (SBA) button itself never appears in any
+-- spellbook skill line, so it's never a key in this cache. Restoring an SBA
+-- slot instead uses the spell C_AssistedCombat.GetActionSpell() captured at
+-- save time (see Scanner.lua), which is an ordinary spellbook entry.
 
 -- Builds a cache of flyoutID -> spellBookIndex for all flyout entries visible in the
 -- current spec's spellbook.  Used as a fallback by ActionAPI.PickupFlyoutID for newer
@@ -144,14 +152,7 @@ end
 function SlotFiller.SpellBookAPI.BuildFlyoutBookCache()
     local cache = {}
     walkCurrentSpecSkillLines(function(bookIndex, itemInfo)
-        if not itemInfo.actionID then return end
-        local isFlyout = false
-        if Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Flyout then
-            isFlyout = itemInfo.itemType == Enum.SpellBookItemType.Flyout
-        elseif type(itemInfo.itemType) == "string" then
-            isFlyout = string.lower(itemInfo.itemType) == "flyout"
-        end
-        if isFlyout then
+        if itemInfo.actionID and isFlyoutItemType(itemInfo) then
             cache[itemInfo.actionID] = bookIndex
         end
     end)

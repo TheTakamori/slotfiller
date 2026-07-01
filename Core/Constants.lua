@@ -1,7 +1,7 @@
 local _, SlotFiller = ...
 
 SlotFiller.Constants = {
-    VERSION = "1.3.0",
+    VERSION = "1.3.1",
     ADDON_NAME = "SlotFiller",
     ADDON_TITLE = "Slot Filler",
     SAVED_VARIABLES = "SlotFillerDB",
@@ -169,7 +169,6 @@ SlotFiller.Constants = {
         TEXT            = { 0.92, 0.92, 0.92, 1 },
         MUTED           = { 0.68, 0.68, 0.68, 1 },
         PLACEHOLDER     = { 0.45, 0.45, 0.45, 1 },
-        WARNING         = { 1,    0.6,  0,    1 },
         TOOLTIP_TITLE   = { 1,    1,    1,    1 },
         TOOLTIP_BODY    = { 0.9,  0.9,  0.9,  1 },
     },
