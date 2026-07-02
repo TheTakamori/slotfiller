@@ -109,13 +109,25 @@ function SlotFiller.ActionAPI.PickupSpellID(spellID)
     return false
 end
 
--- Picks up a zone ability (Draenor outpost, garrison, or similar) for placement on the
--- action bar.  Zone abilities are hidden from the spellbook and cannot be found via
--- BuildSpellBookCache; they must be retrieved through C_ZoneAbility.GetActiveAbilities.
+-- Picks up a zone ability (Draenor outpost, garrison, Undermine's D.R.I.V.E.,
+-- or similar) for placement on the action bar. Zone abilities are hidden
+-- from the spellbook and cannot be found via BuildSpellBookCache; they must
+-- be retrieved through C_ZoneAbility.GetActiveAbilities.
 --
 -- targetSpellID - spell ID of the zone ability as saved in the profile.
+-- Scanner normalises this to the ability's base id before saving, but an
+-- older profile saved before that normalisation existed (or one saved
+-- without C_Spell.GetBaseSpell available) may still hold an override id
+-- instead — e.g. Undermine's G-99 Breakneck shows override id 460013 on the
+-- action bar while C_ZoneAbility.GetActiveAbilities() and pickup both only
+-- recognise its base id, 1215279. ability.spellID == targetSpellID is
+-- checked first (covers the normal, already-normalised case with no extra
+-- API call), then C_Spell.GetBaseSpell(targetSpellID) == ability.spellID as
+-- a fallback — resolving the saved (possibly override) id back to base and
+-- comparing it to the active ability's own (always base) id — for a still
+-- un-normalised override id.
 --
--- Pass 1: exact match (player is in the same zone as when the profile was saved).
+-- Pass 1: matched ability (player is in the same zone as when the profile was saved).
 -- Pass 2: any active zone ability.  WoW dynamically updates the zone-ability slot to
 --         the correct ability for the current zone regardless of which ID was placed.
 --
@@ -130,8 +142,12 @@ function SlotFiller.ActionAPI.PickupZoneAbility(targetSpellID)
     end
 
     for _, ability in ipairs(abilities) do
-        if ability.spellID == targetSpellID then
-            if SlotFiller.ActionAPI.PickupSpellID(targetSpellID) then
+        if ability.spellID then
+            local matches = ability.spellID == targetSpellID
+            if not matches and C_Spell and C_Spell.GetBaseSpell then
+                matches = C_Spell.GetBaseSpell(targetSpellID) == ability.spellID
+            end
+            if matches and SlotFiller.ActionAPI.PickupSpellID(ability.spellID) then
                 return true
             end
         end

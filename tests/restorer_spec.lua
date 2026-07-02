@@ -740,4 +740,92 @@ runner:test("ApplyProfile does not call ClickBindings:Apply when profile has no 
     support.assert.isFalse(called, "ClickBindings:Apply skipped without clickBindings")
 end)
 
+-- ---------------------------------------------------------------------------
+-- End-to-end regression: Scan -> ApplyProfile must never substitute or
+-- collapse macros because of the GetActionInfo macro-id aliasing quirk.
+--
+-- Field regression this guards against: GetActionInfo/C_ActionBar.GetActionInfo
+-- reports subType == "spell" for a macro slot whenever the macro's first
+-- valid line targets a spell, and in that case `id` is the referenced SPELL
+-- id — not the macro's own slot index. Scanner used to trust that id
+-- unconditionally and pass it straight to GetMacroInfo. Since many spells
+-- have low, Classic-era spellIDs, the aliased id can coincidentally collide
+-- with a real (but completely unrelated) macro slot, silently substituting
+-- that macro's name/body in place of the real one — the underlying cause of
+-- reports of unrelated "ghost" macros/buttons appearing after a reload. This
+-- test drives the real Scanner.ReadSlot (not a hand-built slot table) so a
+-- regression in either Scanner's alias resolution or MacroResolver's
+-- matching would fail it end-to-end, the same way the original bug surfaced
+-- in-game.
+-- ---------------------------------------------------------------------------
+
+runner:test("full Scan -> ApplyProfile round trip never substitutes a coincidentally-aliased unrelated macro", function()
+    local ActionAPI = SlotFiller.ActionAPI
+    local originalGetSlotActionInfo = ActionAPI.GetSlotActionInfo
+    -- Spells 5 and 6 alias macro slots 5 and 6 — real, unrelated macros that
+    -- must never be substituted in for these buttons.
+    ActionAPI.GetSlotActionInfo = function(actionID)
+        if actionID == 62 then return "macro", 5, "spell", nil end
+        if actionID == 63 then return "macro", 6, "spell", nil end
+        return nil
+    end
+    _G.GetActionText = function(actionID)
+        if actionID == 62 then return "JudgmentMacro" end
+        if actionID == 63 then return "ShieldMacro" end
+        return nil
+    end
+    _G.GetMacroIndexByName = function(name)
+        if name == "JudgmentMacro" then return 47 end
+        if name == "ShieldMacro" then return 48 end
+        return nil
+    end
+    _G.GetMacroInfo = function(id)
+        if id == 5  then return "WrongUnrelatedMacroA", nil, "/wrong_a" end
+        if id == 6  then return "WrongUnrelatedMacroB", nil, "/wrong_b" end
+        if id == 47 then return "JudgmentMacro", nil, "/cast Judgment" end
+        if id == 48 then return "ShieldMacro", nil, "/cast Avenger's Shield" end
+        return nil
+    end
+    _G.MAX_ACCOUNT_MACROS = 120
+    _G.MAX_CHARACTER_MACROS = 18
+
+    local slot62 = SlotFiller.Scanner:ReadSlot(62)
+    local slot63 = SlotFiller.Scanner:ReadSlot(63)
+    local profile = { slots = { [62] = slot62, [63] = slot63 } }
+
+    -- "Restore" the captured profile as if reloading it on the same
+    -- character: both real macros already exist (GetMacroInfo covers ids
+    -- 47/48), so neither should ever be recreated.
+    local createCalled = false
+    _G.CreateMacro = function() createCalled = true return 999 end
+    _G.PickupMacro = function(id) _G._pickedMacro = id end
+    _G.GetCursorInfo = function() return _G._pickedMacro and "macro" or nil end
+    local placed = {}
+    local originalPlaceSlot = ActionAPI.PlaceSlot
+    ActionAPI.PlaceSlot = function(actionID) placed[actionID] = _G._pickedMacro end
+    local originalClearSlot = ActionAPI.ClearSlot
+    ActionAPI.ClearSlot = function() end
+
+    local ok, errCount = R:ApplyProfile(profile)
+
+    ActionAPI.GetSlotActionInfo = originalGetSlotActionInfo
+    ActionAPI.PlaceSlot = originalPlaceSlot
+    ActionAPI.ClearSlot = originalClearSlot
+    _G.GetActionText = nil
+    _G.GetMacroIndexByName = nil
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = nil
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.CreateMacro = nil
+    _G.PickupMacro = nil
+    _G.GetCursorInfo = nil
+    _G._pickedMacro = nil
+
+    support.assert.equal(ok, true, "apply succeeds")
+    support.assert.equal(errCount, 0, "no restore errors")
+    support.assert.isFalse(createCalled, "neither macro needed to be recreated — both already existed")
+    support.assert.equal(placed[62], 47, "slot 62 restores its real macro, not the slot-5 collision")
+    support.assert.equal(placed[63], 48, "slot 63 restores its real, distinct macro, not the slot-6 collision")
+end)
+
 os.exit(runner:run())

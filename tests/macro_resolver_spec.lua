@@ -96,6 +96,33 @@ runner:test("BuildMacroCache falls back to Constants when MAX_CHARACTER_MACROS i
 end)
 
 -- ---------------------------------------------------------------------------
+-- BuildMacroCache — empty body/name never indexed
+-- ---------------------------------------------------------------------------
+
+-- Regression: empty string is truthy in Lua. Indexing "" would let any two
+-- bodiless (or unresolvable) macro slots collide onto whichever real macro
+-- happened to have an empty body/name — the same class of bug that let
+-- unrelated character macros collapse into one during profile restore.
+runner:test("BuildMacroCache never indexes an empty compressed body", function()
+    local body = setup_macros({
+        { "NoBody",  nil, "" },
+        { "HasBody", nil, "/cast Fireball" },
+    })
+    teardown_macros()
+
+    support.assert.isNil(body[""], "empty body is never a cache key")
+end)
+
+runner:test("BuildMacroCache never indexes an empty macro name", function()
+    local _, name = setup_macros({
+        { "", nil, "/cast Fireball" },
+    })
+    teardown_macros()
+
+    support.assert.isNil(name[""], "empty name is never a cache key")
+end)
+
+-- ---------------------------------------------------------------------------
 -- FindMacroID
 -- ---------------------------------------------------------------------------
 
@@ -146,6 +173,21 @@ runner:test("FindMacroID returns nil when nothing matches", function()
     support.assert.isNil(M:FindMacroID(slot, body, name, id), "no match returns nil")
 end)
 
+-- Regression: two slots that both lack real capture data (empty body AND
+-- empty name — e.g. two macros whose id/name couldn't be resolved) must
+-- never be treated as matching each other or an unrelated bodiless macro.
+runner:test("FindMacroID never matches two slots together via an empty body", function()
+    local body, name, id = setup_macros({
+        { "Real", nil, "/cast Fireball" },
+    })
+    teardown_macros()
+
+    local slotA = { name = "", body = "" }
+    local slotB = { name = "", body = "" }
+    support.assert.isNil(M:FindMacroID(slotA, body, name, id), "empty-bodied slot A has no match")
+    support.assert.isNil(M:FindMacroID(slotB, body, name, id), "empty-bodied slot B has no match")
+end)
+
 -- ---------------------------------------------------------------------------
 -- ResolveOrCreateMacro
 -- ---------------------------------------------------------------------------
@@ -178,6 +220,28 @@ runner:test("ResolveOrCreateMacro creates a character macro when perCharacter an
 
     support.assert.equal(macroID, 555, "newly created macroID returned")
     support.assert.isNil(errReason,    "no error reason on success")
+end)
+
+-- Regression: an empty-string name is truthy in Lua. Without an explicit
+-- guard, ResolveOrCreateMacro would treat it like a real name and call
+-- CreateMacro with a blank name — producing the empty "ghost" character
+-- macro seen in the field regression this whole suite is guarding against.
+runner:test("ResolveOrCreateMacro treats an empty-string name like no name at all", function()
+    local createCalled = false
+    _G.MAX_CHARACTER_MACROS = 18
+    _G.GetNumMacros = function() return 0, 0 end
+    _G.CreateMacro  = function() createCalled = true return 555 end
+
+    local macroID, errReason = M:ResolveOrCreateMacro(
+        "", "", nil, true, emptyMacroCaches())
+
+    _G.MAX_CHARACTER_MACROS = nil
+    _G.GetNumMacros = nil
+    _G.CreateMacro  = nil
+
+    support.assert.isNil(macroID,               "no macroID for an unnamed slot")
+    support.assert.equal(errReason, "not_found", "reason is not_found, not a creation")
+    support.assert.isFalse(createCalled,         "CreateMacro is never called with a blank name")
 end)
 
 runner:test("ResolveOrCreateMacro returns not_found when not perCharacter and no match", function()

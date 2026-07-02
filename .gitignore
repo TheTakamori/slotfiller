@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.zip
+build/
+dist/
+release/
+CURSEFORGE_SUBMISSION.md
+Core/LocalDev.lua
+.env
+.env.*

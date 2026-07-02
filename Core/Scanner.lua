@@ -41,17 +41,48 @@ local function getOutfitName(outfitID)
     return nil
 end
 
-local function readMacro(actionID, macroID)
+-- Since Patch 10.2, GetActionInfo/C_ActionBar.GetActionInfo stopped reliably
+-- returning the macro slot index in `id` for a macro action: whenever the
+-- macro's first valid line targets a spell, `id` is actually that spell's ID
+-- (subType "spell"); when it targets an item, `id` is an unrelated, often
+-- bogus number (subType "item"). Only a nil/empty subType still guarantees
+-- `id` is the real macro slot. Blindly passing the unreliable id to
+-- GetMacroInfo made it return nil (or, worse, some other macro's data if the
+-- spell/item id happened to collide with a valid macro slot number), which
+-- collapsed every affected macro's captured name/body down to nothing and
+-- made unrelated macros indistinguishable from one another on restore.
+-- GetActionText(actionID), unlike `id`, is unaffected by this quirk, so it's
+-- used here to resolve the real macro slot via GetMacroIndexByName whenever
+-- subType signals `id` can't be trusted.
+local function resolveMacroID(macroID, subType, actionText)
+    if not subType or subType == "" then
+        -- Only case where the native id is documented to be the real macro slot.
+        return macroID
+    end
+    if not (GetMacroIndexByName and actionText and actionText ~= "") then
+        -- No name to resolve by: the native id is a known-unreliable alias
+        -- (spell/item id), so drop it rather than risk GetMacroInfo silently
+        -- returning some unrelated macro's data.
+        return nil
+    end
+    local resolvedID = GetMacroIndexByName(actionText)
+    return (resolvedID and resolvedID > 0) and resolvedID or nil
+end
+
+local function readMacro(actionID, macroID, subType)
+    local actionText = GetActionText and GetActionText(actionID) or nil
+    macroID = resolveMacroID(macroID, subType, actionText)
+
     local name, icon, body
     if GetMacroInfo and macroID then
         name, icon, body = GetMacroInfo(macroID)
     end
-    if (not name or name == "") and GetActionText then
-        name = GetActionText(actionID)
+    if (not name or name == "") and actionText and actionText ~= "" then
+        name = actionText
     end
     -- Character-specific macros occupy slots above MAX_ACCOUNT_MACROS (120).
     local perCharacter = macroID ~= nil and macroID > (MAX_ACCOUNT_MACROS or Constants.MAX_ACCOUNT_MACROS_FALLBACK)
-    return name, icon, body, perCharacter
+    return name, icon, body, perCharacter, macroID
 end
 
 -- zoneAbilitySpellIDs is an optional pre-built { [spellID] = true } lookup set
@@ -107,26 +138,48 @@ function SlotFiller.Scanner:ReadSlot(actionID, zoneAbilitySpellIDs, spellOverrid
             end
         end
         raw.name = getSpellName(id)
-        -- Detect Draenor/zone abilities (hidden from spellbook; managed by C_ZoneAbility).
-        -- Tagging them here lets the Restorer use the correct pickup path and surface a
-        -- meaningful error if restoration fails rather than silently skipping the slot.
-        if zoneAbilitySpellIDs and zoneAbilitySpellIDs[id] then
-            raw.isZoneAbility = true
-        end
-        -- Normalise a talent-overridden spell back to its base ID so the saved
-        -- slot survives talent or spec changes made after the save. Skipped
-        -- only for zone abilities and an SBA slot whose id could not be
-        -- resolved to a real spell above — in both cases raw.id isn't a
-        -- genuine spellbook entry, so a talent-override lookup on it would be
-        -- meaningless.
-        if not raw.isZoneAbility and subType ~= Constants.ACTION_SUBTYPE.ASSISTEDCOMBAT
-            and spellOverrideMap and spellOverrideMap[id] then
-            raw.id = spellOverrideMap[id]
+        -- Resolve any active override back to its base spell id up front.
+        -- spellOverrideMap (built by walking the current spec's spellbook)
+        -- covers ordinary talent swaps, but some overrides are never listed
+        -- in any spellbook skill line — most notably vehicle/zone-ability
+        -- ones like Undermine's G-99 Breakneck, whose override id (e.g.
+        -- 460013) is what the action bar shows while its base id (1215279)
+        -- is both what C_ZoneAbility.GetActiveAbilities() reports and the
+        -- only id that can actually be picked back up (see
+        -- ActionAPI.PickupZoneAbility). A spellbook walk alone can never
+        -- learn that mapping, so C_Spell.GetBaseSpell — the general-purpose
+        -- reverse-override lookup, which works for any spell id regardless
+        -- of spellbook membership — is used as well/instead.
+        if subType ~= Constants.ACTION_SUBTYPE.ASSISTEDCOMBAT then
+            local baseID = (spellOverrideMap and spellOverrideMap[id])
+                or (C_Spell and C_Spell.GetBaseSpell and C_Spell.GetBaseSpell(id))
+                or nil
+
+            -- Detect Draenor/zone abilities (hidden from spellbook; managed by
+            -- C_ZoneAbility). Checked against both the raw id and its
+            -- base-resolved id, since the action bar can be showing an
+            -- overridden/vehicle version of a zone ability rather than the id
+            -- C_ZoneAbility.GetActiveAbilities() itself reports. Tagging them
+            -- here lets the Restorer use the correct pickup path and surface a
+            -- meaningful error if restoration fails rather than silently
+            -- skipping the slot.
+            if zoneAbilitySpellIDs and (zoneAbilitySpellIDs[id] or (baseID and zoneAbilitySpellIDs[baseID])) then
+                raw.isZoneAbility = true
+            end
+
+            -- Normalise to the base ID so the saved slot survives talent/spec
+            -- changes, and so a zone ability's override id — which pickup
+            -- can't use directly — is stored as its actually-workable base id
+            -- instead.
+            if baseID and baseID ~= id then
+                raw.id = baseID
+            end
         end
     elseif actionType == Constants.ACTION_TYPE.ITEM then
         raw.name = getItemName(id)
     elseif actionType == Constants.ACTION_TYPE.MACRO then
-        local name, icon, body, perCharacter = readMacro(actionID, id)
+        local name, icon, body, perCharacter, resolvedMacroID = readMacro(actionID, id, subType)
+        raw.id = resolvedMacroID
         raw.name = name
         raw.icon = icon
         raw.body = body

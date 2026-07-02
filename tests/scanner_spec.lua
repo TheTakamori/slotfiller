@@ -79,6 +79,216 @@ runner:test("ReadSlot normalises a macro slot", function()
     support.assert.equal(slot.name,    "MyMacro",  "macro name stored")
 end)
 
+-- Regression: since Patch 10.2, GetActionInfo returns the macro's referenced
+-- spellID (not the macro slot index) whenever subType == "spell". Passing
+-- that spellID straight to GetMacroInfo used to return nil, wiping out the
+-- macro's captured name/body.
+runner:test("ReadSlot resolves the real macroID by name when subType is \"spell\"", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        -- 96231 here is a spellID (Rebuke), not macro slot 42 — exactly the
+        -- Blizzard quirk this test guards against.
+        if actionID == 9 then return "macro", 96231, "spell", nil end
+        return nil
+    end
+    _G.GetActionText = function(actionID)
+        return actionID == 9 and "MyRebukeMacro" or nil
+    end
+    _G.GetMacroIndexByName = function(name)
+        return name == "MyRebukeMacro" and 42 or nil
+    end
+    _G.GetMacroInfo = function(id)
+        if id == 42 then return "MyRebukeMacro", nil, "/cast Rebuke" end
+        return nil
+    end
+    _G.MAX_ACCOUNT_MACROS = 120
+
+    local slot = S:ReadSlot(9)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.GetActionText = nil
+    _G.GetMacroIndexByName = nil
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = nil
+
+    support.assert.equal(slot.type,    "macro",         "macro type normalised")
+    support.assert.equal(slot.macroID, 42,               "resolved real macro slot, not the aliased spellID")
+    support.assert.equal(slot.name,    "MyRebukeMacro",  "macro name resolved via the real macroID")
+    support.assert.equal(slot.body,    "/cast Rebuke",   "macro body resolved via the real macroID")
+end)
+
+-- Regression: the aliased spellID can coincidentally land inside the valid
+-- 1-150 macro slot range (many core spells have low, Classic-era spellIDs),
+-- so GetMacroInfo(<aliased id>) doesn't always fail loudly with nil — it can
+-- silently return a completely unrelated macro's real name/body. This is the
+-- most dangerous form of the bug: silent data corruption at scan time, with
+-- no error to surface it. Resolving by name must never let that substitution
+-- happen.
+runner:test("ReadSlot never substitutes an unrelated macro that coincidentally shares the aliased spellID", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        -- Spell 5 aliases the macro slot; macro slot 5 is a real, unrelated
+        -- macro that must never be substituted in for this button.
+        if actionID == 20 then return "macro", 5, "spell", nil end
+        return nil
+    end
+    _G.GetActionText = function(actionID)
+        return actionID == 20 and "JudgmentMacro" or nil
+    end
+    _G.GetMacroIndexByName = function(name)
+        return name == "JudgmentMacro" and 47 or nil
+    end
+    _G.GetMacroInfo = function(id)
+        if id == 5 then return "WrongUnrelatedMacro", nil, "/wrong" end
+        if id == 47 then return "JudgmentMacro", nil, "/cast Judgment" end
+        return nil
+    end
+    _G.MAX_ACCOUNT_MACROS = 120
+
+    local slot = S:ReadSlot(20)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.GetActionText = nil
+    _G.GetMacroIndexByName = nil
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = nil
+
+    support.assert.equal(slot.macroID, 47,             "resolves to the real macro, not the aliased slot-5 collision")
+    support.assert.equal(slot.name,    "JudgmentMacro", "captures the real macro's name")
+    support.assert.equal(slot.body,    "/cast Judgment", "captures the real macro's body, not the unrelated macro at slot 5")
+end)
+
+-- Regression: two distinct macros that both hit the subType == "spell" alias
+-- quirk must stay distinguishable from one another (the actual bug reported:
+-- multiple different macros collapsed into a single restored macro because
+-- GetMacroInfo(<aliased spellID>) returned nil for both).
+runner:test("ReadSlot keeps two distinct subType=spell macros distinguishable", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 10 then return "macro", 642,   "spell", nil end
+        if actionID == 11 then return "macro", 19750, "spell", nil end
+        return nil
+    end
+    _G.GetActionText = function(actionID)
+        if actionID == 10 then return "MacroA" end
+        if actionID == 11 then return "MacroB" end
+        return nil
+    end
+    _G.GetMacroIndexByName = function(name)
+        if name == "MacroA" then return 121 end
+        if name == "MacroB" then return 122 end
+        return nil
+    end
+    _G.GetMacroInfo = function(id)
+        if id == 121 then return "MacroA", nil, "/cast Judgment" end
+        if id == 122 then return "MacroB", nil, "/cast Avenger's Shield" end
+        return nil
+    end
+    _G.MAX_ACCOUNT_MACROS = 120
+
+    local slotA = S:ReadSlot(10)
+    local slotB = S:ReadSlot(11)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.GetActionText = nil
+    _G.GetMacroIndexByName = nil
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = nil
+
+    support.assert.equal(slotA.macroID, 121, "first macro resolves to its own slot")
+    support.assert.equal(slotB.macroID, 122, "second macro resolves to its own distinct slot")
+    support.assert.equal(slotA.name, "MacroA", "first macro keeps its own name")
+    support.assert.equal(slotB.name, "MacroB", "second macro keeps its own distinct name")
+    support.assert.equal(slotA.body, "/cast Judgment", "first macro keeps its own body")
+    support.assert.equal(slotB.body, "/cast Avenger's Shield", "second macro keeps its own distinct body")
+end)
+
+-- Regression: the same GetActionInfo quirk also fires for subType == "item"
+-- (an item-cast macro), where `id` is documented to return an unrelated,
+-- often bogus number (frequently actionID-1) rather than the macro slot.
+-- The fix treats any non-nil/non-empty subType as untrustworthy, so this
+-- must resolve exactly like the "spell" case.
+runner:test("ReadSlot resolves the real macroID by name when subType is \"item\"", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        -- 8 here mimics Blizzard's documented "actionID - 1" bogus id quirk
+        -- for item-casting macros, not a real macro slot.
+        if actionID == 9 then return "macro", 8, "item", nil end
+        return nil
+    end
+    _G.GetActionText = function(actionID)
+        return actionID == 9 and "TrinketMacro" or nil
+    end
+    _G.GetMacroIndexByName = function(name)
+        return name == "TrinketMacro" and 63 or nil
+    end
+    _G.GetMacroInfo = function(id)
+        if id == 8  then return "WrongMacro", nil, "/wrong" end
+        if id == 63 then return "TrinketMacro", nil, "/use 13" end
+        return nil
+    end
+    _G.MAX_ACCOUNT_MACROS = 120
+
+    local slot = S:ReadSlot(9)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.GetActionText = nil
+    _G.GetMacroIndexByName = nil
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = nil
+
+    support.assert.equal(slot.macroID, 63,            "resolved the real macro slot, not the bogus item-quirk id")
+    support.assert.equal(slot.name,    "TrinketMacro", "macro name resolved via the real macroID")
+    support.assert.equal(slot.body,    "/use 13",      "macro body resolved via the real macroID, not the id-8 collision")
+end)
+
+runner:test("ReadSlot falls back to the native macroID when subType is nil", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 12 then return "macro", 55, nil, nil end
+        return nil
+    end
+    _G.GetActionText = function() return "PlainMacro" end
+    _G.GetMacroIndexByName = function() error("must not be called when subType is nil") end
+    _G.GetMacroInfo = function(id)
+        if id == 55 then return "PlainMacro", nil, "/cast Consecration" end
+        return nil
+    end
+    _G.MAX_ACCOUNT_MACROS = 120
+
+    local slot = S:ReadSlot(12)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.GetActionText = nil
+    _G.GetMacroIndexByName = nil
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = nil
+
+    support.assert.equal(slot.macroID, 55, "native macroID trusted when subType never aliases it")
+end)
+
+runner:test("ReadSlot leaves macroID nil when a subType=spell macro can't be resolved by name", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 13 then return "macro", 999999, "spell", nil end
+        return nil
+    end
+    _G.GetActionText = function() return nil end
+    _G.GetMacroIndexByName = function() return nil end
+    _G.GetMacroInfo = function() error("must not be called with an unresolved macroID") end
+    _G.MAX_ACCOUNT_MACROS = 120
+
+    local slot = S:ReadSlot(13)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.GetActionText = nil
+    _G.GetMacroIndexByName = nil
+    _G.GetMacroInfo = nil
+    _G.MAX_ACCOUNT_MACROS = nil
+
+    support.assert.isNil(slot.macroID, "unresolved alias is dropped rather than trusted as a macroID")
+end)
+
 runner:test("ReadSlot skips equipmentset with nil or empty id", function()
     local originalGetInfo = API.GetSlotActionInfo
     API.GetSlotActionInfo = function()
@@ -124,6 +334,36 @@ runner:test("ReadSlot does not tag spell as zone ability when IDs differ", funct
     _G.C_Spell = nil
 
     support.assert.isNil(slot.isZoneAbility, "non-matching spell not tagged as zone ability")
+end)
+
+-- Regression: some zone abilities are themselves overridden while active —
+-- e.g. Undermine's G-99 Breakneck vehicle shows override spell 460013 on the
+-- action bar, while C_ZoneAbility.GetActiveAbilities() only ever lists its
+-- base spell, 1215279 (the id pickup actually requires — see
+-- ActionAPI.PickupZoneAbility). Checking zoneAbilitySpellIDs against the raw
+-- id alone missed this, so the slot was never tagged isZoneAbility and fell
+-- through to the ordinary IsSpellRestorable gate, which silently (and
+-- incorrectly) treats a zone-only ability as an off-spec spell and skips
+-- restoring it entirely.
+runner:test("ReadSlot tags a zone ability by its base id when the action bar shows an override", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 8 then return "spell", 460013, "spell", 0 end
+        return nil
+    end
+    _G.C_Spell = {
+        GetSpellName = function() return "G-99 Breakneck" end,
+        GetBaseSpell = function(id) return id == 460013 and 1215279 or id end,
+    }
+
+    local zoneAbilitySpellIDs = { [1215279] = true }
+    local slot = S:ReadSlot(8, zoneAbilitySpellIDs)
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.C_Spell = nil
+
+    support.assert.equal(slot.isZoneAbility, true, "override-displayed zone ability is still tagged")
+    support.assert.equal(slot.id, 1215279, "saved id is the ability's base id, which pickup can actually use")
 end)
 
 runner:test("ReadSlot normalises an outfit slot", function()
@@ -301,6 +541,35 @@ runner:test("Scan builds a zoneAbility lookup set from C_ZoneAbility and tags ma
     _G.C_ZoneAbility = nil
 
     support.assert.isTrue(slots[7].isZoneAbility, "slot 7 spell ID matches an active zone ability")
+end)
+
+-- End-to-end regression for the Undermine G-99 Breakneck report: a full
+-- Scan() must tag and normalise an override-displayed zone ability, not just
+-- ReadSlot called in isolation.
+runner:test("Scan tags and normalises a vehicle zone-ability override (G-99 Breakneck)", function()
+    local originalGetInfo = API.GetSlotActionInfo
+    API.GetSlotActionInfo = function(actionID)
+        if actionID == 8 then return "spell", 460013, "spell", 0 end
+        return nil
+    end
+    _G.C_Spell = {
+        GetSpellName = function() return "G-99 Breakneck" end,
+        GetBaseSpell = function(id) return id == 460013 and 1215279 or id end,
+    }
+    _G.C_ZoneAbility = {
+        GetActiveAbilities = function()
+            return { { spellID = 1215279 } }
+        end,
+    }
+
+    local slots = S:Scan()
+
+    API.GetSlotActionInfo = originalGetInfo
+    _G.C_Spell = nil
+    _G.C_ZoneAbility = nil
+
+    support.assert.isTrue(slots[8].isZoneAbility, "override-displayed vehicle ability is flagged as a zone ability")
+    support.assert.equal(slots[8].id, 1215279, "saved as the base id C_ZoneAbility/pickup both recognise")
 end)
 
 runner:test("Scan does not flag a spell absent from the active zone abilities", function()

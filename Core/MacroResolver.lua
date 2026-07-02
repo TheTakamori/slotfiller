@@ -33,8 +33,18 @@ function SlotFiller.MacroResolver:BuildMacroCache()
         if name and body then
             idCache[macroID] = macroID
             local compressedBody = Normalizer.CompressMacroText(body)
-            bodyCache[compressedBody] = macroID
-            if nameCache[name] then
+            -- An empty compressed body (a genuinely bodiless macro) is never
+            -- indexed: it would otherwise become a single shared key that any
+            -- other bodiless — or body-unresolvable — slot could collide
+            -- into, silently reusing the wrong macro. Same reasoning for an
+            -- empty name below.
+            if compressedBody ~= "" then
+                bodyCache[compressedBody] = macroID
+            end
+            if name == "" then
+                -- Never indexable; nothing to blacklist either since "" was
+                -- never a usable lookup key.
+            elseif nameCache[name] then
                 blacklist[name] = true
                 nameCache[name] = nil  -- ambiguous: drop the earlier entry too
             elseif not blacklist[name] then
@@ -59,10 +69,15 @@ function SlotFiller.MacroResolver:FindMacroID(slot, bodyCache, nameCache, idCach
             end
         end
     end
-    if slot.body and bodyCache[slot.body] then
+    -- Empty string is truthy in Lua but never a meaningful lookup key here:
+    -- treating it as one would let two otherwise-unrelated slots that both
+    -- lack a real body/name (e.g. two macros whose data couldn't be
+    -- resolved) collide onto whichever single macro happened to claim that
+    -- cache entry first.
+    if slot.body and slot.body ~= "" and bodyCache[slot.body] then
         return bodyCache[slot.body]
     end
-    if slot.name and nameCache[slot.name] then
+    if slot.name and slot.name ~= "" and nameCache[slot.name] then
         return nameCache[slot.name]
     end
     return nil
@@ -80,7 +95,12 @@ function SlotFiller.MacroResolver:ResolveOrCreateMacro(name, body, icon, perChar
         return macroID, nil
     end
 
-    if not (perCharacter and name) then
+    -- name == "" is truthy in Lua but useless as a macro identity — refusing
+    -- to recreate from it (same as a nil name) avoids ever calling
+    -- CreateMacro with a blank name for a slot that has no real identifying
+    -- data left, which is exactly what produced the empty "ghost" macro in
+    -- the regression this guards against.
+    if not (perCharacter and name and name ~= "") then
         return nil, "not_found"
     end
 
@@ -94,7 +114,7 @@ function SlotFiller.MacroResolver:ResolveOrCreateMacro(name, body, icon, perChar
     -- slot or click binding referencing the same macro) finds it instead of
     -- attempting a duplicate creation.
     caches.macroID[newID] = newID
-    if body then caches.macroBody[body] = newID end
+    if body and body ~= "" then caches.macroBody[body] = newID end
     caches.macroName[name] = newID
     return newID, nil
 end

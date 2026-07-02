@@ -16,6 +16,66 @@ local T       = SlotFiller.Text
 local emptyCaches = support.empty_restore_caches
 
 -- ---------------------------------------------------------------------------
+-- ActionAPI.PickupZoneAbility — override-id matching
+-- ---------------------------------------------------------------------------
+
+-- Regression: some zone abilities are overridden while active (e.g.
+-- Undermine's G-99 Breakneck: override 460013 is what's saved/shown, but
+-- C_ZoneAbility.GetActiveAbilities() only ever reports the base id,
+-- 1215279). An exact ability.spellID == targetSpellID check alone would
+-- never match a still-un-normalised (older) saved override id, so a
+-- GetBaseSpell-based fallback match is required too.
+-- A second, unrelated active ability is listed first here specifically so
+-- Pass 2's "grab whichever ability is active" fallback can't accidentally
+-- mask a Pass-1 matching bug the way it would with only one ability active:
+-- if Pass 1's override matching didn't work, Pass 2 would silently pick up
+-- the wrong (unrelated) ability instead of failing loudly.
+runner:test("PickupZoneAbility matches an un-normalised override id via C_Spell.GetBaseSpell", function()
+    _G.C_ZoneAbility = {
+        GetActiveAbilities = function()
+            return { { spellID = 999999 }, { spellID = 1215279 } }
+        end,
+    }
+    _G.C_Spell = {
+        GetBaseSpell = function(id) return id == 460013 and 1215279 or id end,
+    }
+    local originalPickupSpellID = API.PickupSpellID
+    local pickedID = nil
+    API.PickupSpellID = function(id) pickedID = id; return true end
+
+    local picked = API.PickupZoneAbility(460013)
+
+    _G.C_ZoneAbility = nil
+    _G.C_Spell = nil
+    API.PickupSpellID = originalPickupSpellID
+
+    support.assert.isTrue(picked, "override id resolves to the active zone ability")
+    support.assert.equal(pickedID, 1215279,
+        "picked up the correct ability via its base id, not the unrelated one listed first")
+end)
+
+runner:test("PickupZoneAbility matches directly when the saved id is already the base id", function()
+    _G.C_ZoneAbility = {
+        GetActiveAbilities = function()
+            return { { spellID = 1215279 } }
+        end,
+    }
+    _G.C_Spell = { GetBaseSpell = function() error("must not be called when the exact id already matches") end }
+    local pickedID = nil
+    local originalPickupSpellID = API.PickupSpellID
+    API.PickupSpellID = function(id) pickedID = id; return true end
+
+    local picked = API.PickupZoneAbility(1215279)
+
+    _G.C_ZoneAbility = nil
+    _G.C_Spell = nil
+    API.PickupSpellID = originalPickupSpellID
+
+    support.assert.isTrue(picked, "already-normalised id matches directly")
+    support.assert.equal(pickedID, 1215279, "picked up via the exact matched id")
+end)
+
+-- ---------------------------------------------------------------------------
 -- Spell dispatch
 -- ---------------------------------------------------------------------------
 

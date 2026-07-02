@@ -8,7 +8,7 @@ slot.
 Profiles are account-wide. Any profile saved on one character is available on
 every other character on the account.
 
-Current version: `1.3.1`.
+Current version: `1.3.2`.
 
 Target: WoW Retail `12.0.7 (Midnight)`.
 
